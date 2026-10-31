@@ -15,7 +15,11 @@ frontend/dist/
 # Raw Data (large PhysioNet archives)
 ml/data/raw/*.zip
 ml/data/raw/*.tar.gz
-ml/data/raw/challenge-2019/
+ml/data/raw/challenge-2019/*
+!ml/data/raw/challenge-2019/training_setA/
+ml/data/raw/challenge-2019/training_setA/*
+!ml/data/raw/challenge-2019/training_setA/p000001.psv
+!ml/data/raw/challenge-2019/training_setA/p000002.psv
 ml/data/raw/challenge-2017/
 ml/data/raw/mitdb/
 ml/data/raw/mimic-iv/
