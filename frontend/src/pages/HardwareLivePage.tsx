@@ -39,7 +39,8 @@ import {
 import {
   ParsedEsp32Reading,
   parseEsp32SerialLine,
-  computePortableSepsisRisk
+  computePortableSepsisRisk,
+  getActiveSensorUsage
 } from "../utils/esp32Parser";
 import { TelemetryUpdateMessage, SerialStatus } from "../types";
 
@@ -317,6 +318,7 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
   const [cfgSaved, setCfgSaved] = useState(false);
   const consecutiveHighRef = useRef<number>(0);
   const lastAlertMsRef = useRef<number>(0);
+  const lastHistoryPushMsRef = useRef<number>(0);
 
   // Canvas refs
   const hrCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -324,47 +326,88 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
   const tempCanvasRef = useRef<HTMLCanvasElement>(null);
   const riskCanvasRef = useRef<HTMLCanvasElement>(null);
 
+  const handleClearReadings = useCallback(() => {
+    setHistory([]);
+    setRiskHistory([]);
+    setPacketsReceived(0);
+    setLiveReading({
+      hr: null,
+      ecg_bpm: null,
+      spo2: null,
+      obj: null,
+      amb: null,
+      led: null,
+      finger: null,
+      lead_off: null
+    });
+    sensorStatsRef.current = {
+      total: 0,
+      hrValid: 0,
+      hrLastMs: null,
+      ecgValid: 0,
+      ecgLastMs: null,
+      spo2Valid: 0,
+      spo2LastMs: null,
+      tempValid: 0,
+      tempLastMs: null
+    };
+  }, []);
+
   // ── Handle incoming parsed reading from either Web Serial or Backend ──
   const ingestParsedReading = useCallback(
-    (partial: Partial<ParsedEsp32Reading>) => {
+    (partial: Partial<ParsedEsp32Reading>, fromWebSocket = false) => {
       const nowMs = Date.now();
       const nowSec = nowMs / 1000;
       setLastPacketMs(nowMs);
-      setPacketsReceived((c) => c + 1);
 
       if (partial.raw_line) {
         setRawSerialLines((prev) => [...prev.slice(-29), partial.raw_line!]);
       }
 
       setLiveReading((prev) => {
+        const fingerExplicitlyOff = partial.finger === false && partial.hr == null && partial.spo2 == null;
+        const leadsExplicitlyOff = partial.lead_off === true && partial.ecg_bpm == null && fingerExplicitlyOff;
+
+        const nextHr = fingerExplicitlyOff
+          ? null
+          : partial.hr !== undefined && partial.hr !== null
+          ? partial.hr
+          : prev.hr;
+
+        const nextSpo2 = fingerExplicitlyOff
+          ? null
+          : partial.spo2 !== undefined && partial.spo2 !== null
+          ? partial.spo2
+          : prev.spo2;
+
+        const nextEcg = leadsExplicitlyOff
+          ? null
+          : partial.ecg_bpm !== undefined && partial.ecg_bpm !== null
+          ? partial.ecg_bpm
+          : nextHr ?? prev.ecg_bpm;
+
+        const nextObj =
+          partial.obj !== undefined && partial.obj !== null ? partial.obj : prev.obj;
+
+        const nextAmb =
+          partial.amb !== undefined && partial.amb !== null ? partial.amb : prev.amb;
+
         const next: ParsedEsp32Reading = {
-          hr: partial.hr !== undefined && partial.hr !== null ? partial.hr : prev.hr,
-          ecg_bpm:
-            partial.ecg_bpm !== undefined && partial.ecg_bpm !== null
-              ? partial.ecg_bpm
-              : prev.ecg_bpm,
-          spo2:
-            partial.spo2 !== undefined && partial.spo2 !== null
-              ? partial.spo2
-              : prev.spo2,
-          obj:
-            partial.obj !== undefined && partial.obj !== null
-              ? partial.obj
-              : prev.obj,
-          amb:
-            partial.amb !== undefined && partial.amb !== null
-              ? partial.amb
-              : prev.amb,
+          hr: nextHr,
+          ecg_bpm: nextEcg,
+          spo2: nextSpo2,
+          obj: nextObj,
+          amb: nextAmb,
           led:
             partial.led !== undefined && partial.led !== null
               ? partial.led
-              : partial.obj !== undefined && partial.obj !== null
-              ? partial.obj >= 25.0
+              : nextObj !== null
+              ? nextObj >= 25.0
               : prev.led,
           finger:
             partial.finger !== undefined && partial.finger !== null
               ? partial.finger
-              : partial.hr != null || partial.spo2 != null
+              : nextHr != null || nextSpo2 != null
               ? true
               : prev.finger,
           lead_off:
@@ -374,80 +417,91 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
           ecg_samples: partial.ecg_samples || prev.ecg_samples
         };
 
-        // Update sensor stats
-        const st = sensorStatsRef.current;
-        st.total += 1;
-        if (next.hr !== null) {
-          st.hrValid += 1;
-          st.hrLastMs = nowMs;
-        }
-        if (next.ecg_bpm !== null || (next.ecg_samples && next.ecg_samples.length > 0)) {
-          st.ecgValid += 1;
-          st.ecgLastMs = nowMs;
-        }
-        if (next.spo2 !== null) {
-          st.spo2Valid += 1;
-          st.spo2LastMs = nowMs;
-        }
-        if (next.obj !== null) {
-          st.tempValid += 1;
-          st.tempLastMs = nowMs;
-        }
+        const usage = getActiveSensorUsage(next);
 
-        // Append to history
-        setHistory((h) => [
-          ...h.slice(-179),
-          {
-            ts: nowSec,
-            hr: next.hr,
-            ecg_bpm: next.ecg_bpm ?? next.hr,
-            spo2: next.spo2,
-            obj: next.obj
+        // Rate-limit history & parent forwarding to 1 Hz (900ms) and ONLY record when a human is using at least one sensor
+        const shouldRecordSample =
+          usage.anyActive && nowMs - lastHistoryPushMsRef.current >= 900;
+
+        if (shouldRecordSample) {
+          lastHistoryPushMsRef.current = nowMs;
+          setPacketsReceived((c) => c + 1);
+
+          // Update sensor stats only for active human sensor readings
+          const st = sensorStatsRef.current;
+          st.total += 1;
+          if (next.hr !== null) {
+            st.hrValid += 1;
+            st.hrLastMs = nowMs;
           }
-        ]);
+          if (next.ecg_bpm !== null || (next.ecg_samples && next.ecg_samples.length > 0)) {
+            st.ecgValid += 1;
+            st.ecgLastMs = nowMs;
+          }
+          if (next.spo2 !== null) {
+            st.spo2Valid += 1;
+            st.spo2LastMs = nowMs;
+          }
+          if (next.obj !== null && usage.tempActive) {
+            st.tempValid += 1;
+            st.tempLastMs = nowMs;
+          }
 
-        // Compute risk
-        const riskObj = computePortableSepsisRisk(
-          next.hr,
-          next.ecg_bpm,
-          next.spo2,
-          next.obj,
-          cfgForm.temp_offset_c,
-          cfgForm.alert_threshold
-        );
-        if (riskObj.status === "ok" && riskObj.risk !== null) {
-          setRiskHistory((rh) => [
-            ...rh.slice(-179),
-            { ts: nowSec, risk: riskObj.risk!, level: riskObj.level }
+          // Append to history (only active human readings)
+          setHistory((h) => [
+            ...h.slice(-119),
+            {
+              ts: nowSec,
+              hr: next.hr,
+              ecg_bpm: next.ecg_bpm ?? next.hr,
+              spo2: next.spo2,
+              obj: usage.tempActive ? next.obj : null
+            }
           ]);
 
-          if (riskObj.risk >= cfgForm.alert_threshold) {
-            consecutiveHighRef.current += 1;
-            if (
-              cfgForm.alert_enabled &&
-              consecutiveHighRef.current >= cfgForm.consecutive_required &&
-              nowMs - lastAlertMsRef.current >= cfgForm.cooldown_seconds * 1000
-            ) {
-              lastAlertMsRef.current = nowMs;
-              setAlerts((al) => [
-                {
-                  id: nowMs,
-                  ts: nowSec,
-                  type: "SEPSIS_RISK",
-                  level: "HIGH",
-                  message: `Estimated 6h risk ${(riskObj.risk! * 100).toFixed(1)}% exceeded threshold ${(cfgForm.alert_threshold * 100).toFixed(1)}% (HR=${next.hr ?? "—"}, SpO2=${next.spo2 ?? "—"}%, Temp=${next.obj ?? "—"}°C)`,
-                  acknowledged: false
-                },
-                ...al.slice(0, 29)
-              ]);
+          // Compute risk
+          const riskObj = computePortableSepsisRisk(
+            next.hr,
+            next.ecg_bpm,
+            next.spo2,
+            usage.tempActive ? next.obj : null,
+            cfgForm.temp_offset_c,
+            cfgForm.alert_threshold
+          );
+          if (riskObj.status === "ok" && riskObj.risk !== null) {
+            setRiskHistory((rh) => [
+              ...rh.slice(-119),
+              { ts: nowSec, risk: riskObj.risk!, level: riskObj.level }
+            ]);
+
+            if (riskObj.risk >= cfgForm.alert_threshold) {
+              consecutiveHighRef.current += 1;
+              if (
+                cfgForm.alert_enabled &&
+                consecutiveHighRef.current >= cfgForm.consecutive_required &&
+                nowMs - lastAlertMsRef.current >= cfgForm.cooldown_seconds * 1000
+              ) {
+                lastAlertMsRef.current = nowMs;
+                setAlerts((al) => [
+                  {
+                    id: nowMs,
+                    ts: nowSec,
+                    type: "SEPSIS_RISK",
+                    level: "HIGH",
+                    message: `Estimated 6h risk ${(riskObj.risk! * 100).toFixed(1)}% exceeded threshold ${(cfgForm.alert_threshold * 100).toFixed(1)}% (HR=${next.hr ?? "—"}, SpO2=${next.spo2 ?? "—"}%, Temp=${next.obj ?? "—"}°C)`,
+                    acknowledged: false
+                  },
+                  ...al.slice(0, 29)
+                ]);
+              }
+            } else {
+              consecutiveHighRef.current = 0;
             }
-          } else {
-            consecutiveHighRef.current = 0;
           }
         }
 
-        // Forward to parent App.tsx so LiveMonitor and other tabs update simultaneously
-        if (onHardwareReading) {
+        // Forward to parent App.tsx ONLY when reading came from Web Serial (never re-forward WebSocket echo!)
+        if (!fromWebSocket && onHardwareReading && (shouldRecordSample || !usage.anyActive)) {
           onHardwareReading(next);
         }
 
@@ -457,23 +511,28 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
     [cfgForm, onHardwareReading]
   );
 
-  // ── Sync from backend WebSocket telemetry when non-replay hardware data arrives ──
+  // ── Sync from backend WebSocket telemetry ONLY when Web Serial is NOT active and packet is not our own echo ──
   useEffect(() => {
+    if (usbConnected) return;
     if (!latestTelemetry || latestTelemetry.is_replay) return;
+    if (latestTelemetry.device_id === "esp32-usb-live") return;
     const v = latestTelemetry.vitals;
     if (v.hr_bpm !== null || v.spo2_pct !== null || v.temp_c !== null) {
-      ingestParsedReading({
-        hr: v.hr_bpm,
-        ecg_bpm: v.ecg_hr ?? v.hr_bpm,
-        spo2: v.spo2_pct,
-        obj: v.temp_c,
-        led: v.temp_c !== null ? v.temp_c >= 25.0 : null,
-        finger: !latestTelemetry.flags?.finger_off,
-        lead_off: Boolean(latestTelemetry.flags?.leads_off),
-        ecg_samples: latestTelemetry.ecg_preview
-      });
+      ingestParsedReading(
+        {
+          hr: v.hr_bpm,
+          ecg_bpm: v.ecg_hr ?? v.hr_bpm,
+          spo2: v.spo2_pct,
+          obj: v.temp_c,
+          led: v.temp_c !== null ? v.temp_c >= 25.0 : null,
+          finger: !latestTelemetry.flags?.finger_off,
+          lead_off: Boolean(latestTelemetry.flags?.leads_off),
+          ecg_samples: latestTelemetry.ecg_preview
+        },
+        true
+      );
     }
-  }, [latestTelemetry]);
+  }, [latestTelemetry, usbConnected, ingestParsedReading]);
 
   // ── Read loop from Web Serial port ──
   const openAndReadSerialPort = useCallback(
@@ -715,39 +774,35 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
         if (stRes?.devices?.[0]) {
           setBackendDevice(stRes.devices[0]);
         }
-        if (latRes?.prediction && latRes.prediction.status === "ok") {
+        // Only use backend telemetry/prediction if it arrived in the last 10 seconds and Web Serial is not already active
+        const nowEpochSec = Date.now() / 1000;
+        const latestTel = latRes?.telemetry;
+        const isFreshBackendTel =
+          latestTel &&
+          latestTel.received &&
+          nowEpochSec - Number(latestTel.received) <= 10;
+
+        if (isFreshBackendTel && latRes?.prediction && latRes.prediction.status === "ok") {
           setBackendPred(latRes.prediction);
+        } else if (!isFreshBackendTel) {
+          setBackendPred(null);
         }
-        if (latRes?.telemetry && !usbConnected) {
-          const t = latRes.telemetry;
-          setLiveReading((prev) => ({
-            hr: t.hr ?? prev.hr,
-            ecg_bpm: t.ecg_bpm ?? prev.ecg_bpm,
-            spo2: t.spo2 ?? prev.spo2,
-            obj: t.obj ?? prev.obj,
-            amb: t.amb ?? prev.amb,
-            led: t.led !== undefined ? Boolean(t.led) : prev.led,
-            finger: t.finger !== undefined ? Boolean(t.finger) : prev.finger,
-            lead_off: t.lead_off !== undefined ? Boolean(t.lead_off) : prev.lead_off
-          }));
-          if (t.received) {
-            setLastPacketMs(t.received * 1000);
-          }
-        }
-        if (histRes?.points?.length > 0 && !usbConnected) {
-          setHistory(histRes.points);
-          setPacketsReceived((c) => Math.max(c, histRes.points.length));
-        }
-        if (Array.isArray(predRes) && predRes.length > 0 && !usbConnected) {
-          const okPreds = predRes
-            .filter((q: any) => q.status === "ok" && q.risk != null)
-            .reverse()
-            .map((q: any) => ({
-              ts: q.ts,
-              risk: q.risk,
-              level: (q.level || "LOW") as "NORMAL" | "ELEVATED" | "HIGH"
-            }));
-          if (okPreds.length > 0) setRiskHistory(okPreds);
+
+        if (isFreshBackendTel && !usbConnected) {
+          const t = latestTel;
+          ingestParsedReading(
+            {
+              hr: t.hr ?? null,
+              ecg_bpm: t.ecg_bpm ?? null,
+              spo2: t.spo2 ?? null,
+              obj: t.obj ?? null,
+              amb: t.amb ?? null,
+              led: t.led !== undefined ? Boolean(t.led) : null,
+              finger: t.finger !== undefined ? Boolean(t.finger) : null,
+              lead_off: t.lead_off !== undefined ? Boolean(t.lead_off) : null
+            },
+            true
+          );
         }
         if (Array.isArray(alRes) && alRes.length > 0) {
           setAlerts(
@@ -769,7 +824,7 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
       active = false;
       clearInterval(t);
     };
-  }, [usbConnected]);
+  }, [usbConnected, ingestParsedReading]);
 
   const handleSaveCfg = () => {
     localStorage.setItem("septisense_esp32_cfg", JSON.stringify(cfgForm));
@@ -804,19 +859,20 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
     usbConnected ||
     Boolean(serialStatus?.is_connected) ||
     Boolean(backendDevice?.connected) ||
-    packetsReceived > 0;
+    lastPacketMs !== null;
   const nowMs = Date.now();
   const st = sensorStatsRef.current;
   const totalCount = Math.max(1, st.total);
+  const sensorUsage = getActiveSensorUsage(liveReading);
 
   const sensors: Record<string, Sensor> = {
     "temperature (MLX90614)": {
-      hardware_ok: st.tempValid > 0 || isDeviceConnected,
+      hardware_ok: sensorUsage.tempActive || st.tempValid > 0 || isDeviceConnected,
       valid_pct: st.total > 0 ? st.tempValid / totalCount : 0,
       last_valid_s_ago: st.tempLastMs ? (nowMs - st.tempLastMs) / 1000 : null
     },
     "pulse_ox (MAX30102)": {
-      hardware_ok: st.hrValid > 0 || st.spo2Valid > 0 || isDeviceConnected,
+      hardware_ok: sensorUsage.spo2Active || st.hrValid > 0 || st.spo2Valid > 0 || isDeviceConnected,
       valid_pct: st.total > 0 ? Math.max(st.hrValid, st.spo2Valid) / totalCount : 0,
       last_valid_s_ago: st.hrLastMs
         ? (nowMs - st.hrLastMs) / 1000
@@ -825,7 +881,7 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
         : null
     },
     "ecg (AD8232)": {
-      hardware_ok: !liveReading.lead_off && (st.ecgValid > 0 || isDeviceConnected),
+      hardware_ok: sensorUsage.heartActive || (!liveReading.lead_off && (st.ecgValid > 0 || isDeviceConnected)),
       valid_pct: st.total > 0 ? st.ecgValid / totalCount : 0,
       last_valid_s_ago: st.ecgLastMs ? (nowMs - st.ecgLastMs) / 1000 : null
     }
@@ -835,12 +891,12 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
     liveReading.hr,
     liveReading.ecg_bpm,
     liveReading.spo2,
-    liveReading.obj,
+    sensorUsage.tempActive ? liveReading.obj : null,
     cfgForm.temp_offset_c,
     cfgForm.alert_threshold
   );
   const riskCalc =
-    backendPred && backendPred.status === "ok" && backendPred.risk != null
+    sensorUsage.anyActive && backendPred && backendPred.status === "ok" && backendPred.risk != null
       ? {
           status: "ok" as const,
           risk: Number(backendPred.risk),
@@ -865,7 +921,7 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
               ESP32 Hardware Live — Direct Portable USB Telemetry
             </p>
             <p className="text-[11px] text-slate-400">
-              Plug your ESP32 sensor node into ANY laptop USB port to stream live human vitals
+              Shows ONLY the live readings of the person currently using the Temperature, Heart Monitor &amp; SpO₂ sensors
             </p>
           </div>
         </div>
@@ -886,7 +942,7 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
             )}
             <span>
               {isDeviceConnected
-                ? `ESP32 Connected (${packetsReceived} readings)`
+                ? `ESP32 Connected (${packetsReceived} human readings)`
                 : "ESP32 USB Disconnected"}
             </span>
           </div>
@@ -931,6 +987,16 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
               </span>
             </button>
           )}
+
+          {/* Reset Session Readings Button */}
+          <button
+            onClick={handleClearReadings}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-amber-300 text-xs font-mono transition-colors cursor-pointer"
+            title="Clear current person's readings for a fresh measurement session"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Reset Session</span>
+          </button>
 
           {/* Raw Serial Monitor Toggle */}
           <button
@@ -997,6 +1063,121 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
         </div>
       )}
 
+      {/* ── Live 3-Sensor Human Contact Monitor (Temperature • Heart Monitor • SpO2) ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {/* 1. Temperature Sensor (MLX90614) */}
+        <div
+          className={`rounded-xl p-3.5 border transition-all ${
+            sensorUsage.tempActive
+              ? "bg-orange-950/30 border-orange-500/50 shadow-md shadow-orange-500/10"
+              : "bg-slate-900/70 border-slate-800"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-orange-300">
+              <Thermometer className="w-4 h-4 text-orange-400" />
+              1. Temperature Sensor (MLX90614)
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                sensorUsage.tempActive
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                  : "bg-slate-800 text-slate-400"
+              }`}
+            >
+              {sensorUsage.tempActive ? "In Use • Reading" : "Idle"}
+            </span>
+          </div>
+          <div className="text-xs text-slate-300 font-mono">
+            {liveReading.obj != null ? (
+              <span>
+                Surface: <strong className="text-orange-300">{fmt(liveReading.obj, 1)}°C</strong>
+                {" • "}Core Est:{" "}
+                <strong className="text-amber-300">
+                  {fmt(liveReading.obj + cfgForm.temp_offset_c, 1)}°C
+                </strong>
+                {liveReading.amb != null ? ` • Amb: ${fmt(liveReading.amb, 1)}°C` : ""}
+              </span>
+            ) : (
+              <span className="text-slate-500">Hold finger/wrist over MLX90614 IR sensor</span>
+            )}
+          </div>
+        </div>
+
+        {/* 2. Heart Monitor (AD8232 ECG + Optical Pulse) */}
+        <div
+          className={`rounded-xl p-3.5 border transition-all ${
+            sensorUsage.heartActive
+              ? "bg-cyan-950/30 border-cyan-500/50 shadow-md shadow-cyan-500/10"
+              : "bg-slate-900/70 border-slate-800"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+              <Heart className="w-4 h-4 text-cyan-400" />
+              2. Heart Monitor (ECG &amp; Pulse)
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                sensorUsage.heartActive
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                  : "bg-slate-800 text-slate-400"
+              }`}
+            >
+              {sensorUsage.heartActive ? "In Use • Reading" : "Idle"}
+            </span>
+          </div>
+          <div className="text-xs text-slate-300 font-mono">
+            {sensorUsage.heartActive ? (
+              <span>
+                Pulse HR: <strong className="text-cyan-300">{fmt(liveReading.hr, 0)} BPM</strong>
+                {" • "}ECG HR:{" "}
+                <strong className="text-amber-300">
+                  {fmt(liveReading.ecg_bpm ?? liveReading.hr, 0)} BPM
+                </strong>
+              </span>
+            ) : (
+              <span className="text-slate-500">Place finger on MAX30102 or attach AD8232 leads</span>
+            )}
+          </div>
+        </div>
+
+        {/* 3. SpO2 Sensor (MAX30102) */}
+        <div
+          className={`rounded-xl p-3.5 border transition-all ${
+            sensorUsage.spo2Active
+              ? "bg-violet-950/30 border-violet-500/50 shadow-md shadow-violet-500/10"
+              : "bg-slate-900/70 border-slate-800"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-violet-300">
+              <BarChart2 className="w-4 h-4 text-violet-400" />
+              3. SpO₂ Sensor (MAX30102)
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                sensorUsage.spo2Active
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                  : "bg-slate-800 text-slate-400"
+              }`}
+            >
+              {sensorUsage.spo2Active ? "In Use • Reading" : "Idle"}
+            </span>
+          </div>
+          <div className="text-xs text-slate-300 font-mono">
+            {sensorUsage.spo2Active && liveReading.spo2 != null ? (
+              <span>
+                Blood Oxygen: <strong className="text-violet-300">{fmt(liveReading.spo2, 0)}%</strong>
+                {" • "}Finger Contact: <strong className="text-emerald-400">Detected ✓</strong>
+              </span>
+            ) : (
+              <span className="text-slate-500">Place finger steadily on MAX30102 red LED</span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* ── Banners ── */}
       <div className="space-y-2">
         <div className="flex items-center gap-2 bg-amber-950/30 border border-amber-500/30 rounded-lg px-3 py-2 text-amber-300 text-xs">
@@ -1033,9 +1214,9 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
           </div>
           <div className="text-[10px] text-slate-500">
             {liveReading.hr != null
-              ? "valid (BPM)"
+              ? "live human pulse (BPM)"
               : liveReading.finger
-              ? "waiting for steady pulse"
+              ? "acquiring pulse..."
               : "place finger on sensor"}
           </div>
         </div>
@@ -1050,7 +1231,11 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
             {fmt(liveReading.ecg_bpm ?? liveReading.hr, 0)}
           </div>
           <div className="text-[10px] text-slate-500">
-            {liveReading.lead_off ? "leads off" : "BPM (AD8232)"}
+            {liveReading.ecg_bpm != null || liveReading.hr != null
+              ? liveReading.lead_off
+                ? "optical pulse sync (BPM)"
+                : "AD8232 ECG (BPM)"
+              : "attach leads or finger"}
           </div>
         </div>
 
@@ -1064,7 +1249,7 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
             {liveReading.spo2 != null ? `${fmt(liveReading.spo2, 0)}%` : "—"}
           </div>
           <div className="text-[10px] text-slate-500">
-            {liveReading.spo2 != null ? "valid" : "awaiting optical lock"}
+            {liveReading.spo2 != null ? "live optical SpO₂" : "place finger on sensor"}
           </div>
         </div>
 
@@ -1078,9 +1263,9 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
             {liveReading.obj != null ? `${fmt(liveReading.obj, 1)}°C` : "—"}
           </div>
           <div className="text-[10px] text-slate-500">
-            {liveReading.amb != null
-              ? `ambient ${fmt(liveReading.amb, 1)}°C`
-              : "IR surface reading"}
+            {liveReading.obj != null
+              ? `Core est: ${fmt(liveReading.obj + cfgForm.temp_offset_c, 1)}°C (Amb ${fmt(liveReading.amb ?? 25.5, 1)}°C)`
+              : "hold sensor to skin"}
           </div>
         </div>
 

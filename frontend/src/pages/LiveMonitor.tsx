@@ -236,10 +236,10 @@ export const LiveMonitor: React.FC<LiveMonitorProps> = ({
             {/* SQI Channels Progress Bars */}
             <div className="space-y-3.5">
               {[
-                { label: "ECG Waveform (AD8232)", value: sqi.ecg, note: flags.leads_off ? "Leads detached" : "Good baseline stability" },
-                { label: "Photoplethysmogram (MAX30102)", value: sqi.spo2, note: flags.finger_off ? "Finger detached" : "Clean optical plethysmogram" },
-                { label: "Heart Rate Agreement", value: sqi.hr, note: "ECG & Optical cross-correlation" },
-                { label: "DS18B20 1-Wire Thermal Probe", value: sqi.temp, note: "Stable physiological gradient" }
+                { label: "ECG Heart Monitor (AD8232)", value: sqi.ecg, note: flags.leads_off ? "Leads detached" : "Good baseline stability" },
+                { label: "SpO₂ & Optical Pulse (MAX30102)", value: sqi.spo2, note: flags.finger_off ? "Finger detached" : "Clean optical plethysmogram" },
+                { label: "Heart Rate Agreement (ECG + PPG)", value: sqi.hr, note: "ECG & Optical cross-correlation" },
+                { label: "Temperature Sensor (MLX90614 IR)", value: sqi.temp, note: "Surface & core thermal tracking" }
               ].map((item) => (
                 <div key={item.label} className="space-y-1">
                   <div className="flex justify-between text-xs">

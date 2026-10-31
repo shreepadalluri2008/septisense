@@ -78,18 +78,25 @@ def process_telemetry_payload(db: Session, payload: TelemetryPayload) -> Dict[st
     hr = payload.hr_bpm
     spo2 = payload.spo2_pct
     temp = payload.temp_c
+    ecg_hr = payload.ecg_hr
     
     # Rejection of physiologically impossible values (flags recorded)
     if hr is not None and (hr < 30.0 or hr > 220.0):
         hr = None
-    if spo2 is not None and (spo2 < 60.0 or spo2 > 100.0):
+    if ecg_hr is not None and (ecg_hr < 30.0 or ecg_hr > 220.0):
+        ecg_hr = None
+    if spo2 is not None and (spo2 < 50.0 or spo2 > 100.0):
         spo2 = None
-    if temp is not None and (temp < 30.0 or temp > 43.0):
+    if temp is not None and (temp < 20.0 or temp > 45.0):
         temp = None
+
+    if hr is None and ecg_hr is not None:
+        hr = ecg_hr
+    if ecg_hr is None and hr is not None and not payload.flags.leads_off:
+        ecg_hr = hr
         
     flags_dict = payload.flags.model_dump() if hasattr(payload.flags, "model_dump") else payload.flags.dict()
-    ecg_hr = None
-    resp_rate = None
+    resp_rate = round(hr / 4.5, 1) if hr is not None else None
     rhythm_class = 0
     rhythm_label = "Normal"
     

@@ -17,7 +17,8 @@ import { HardwareLivePage } from "./pages/HardwareLivePage";
 import {
   ParsedEsp32Reading,
   computePortableSepsisRisk,
-  synthesizeEcgWaveFromHr
+  synthesizeEcgWaveFromHr,
+  getActiveSensorUsage
 } from "./utils/esp32Parser";
 
 // Types & API
@@ -73,6 +74,7 @@ export const App: React.FC = () => {
   // Freeze / Resume State for Clinical Inspection
   const [isFrozen, setIsFrozen] = useState<boolean>(false);
   const isFrozenRef = useRef<boolean>(false);
+  const lastBackendPostMsRef = useRef<number>(0);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -168,16 +170,23 @@ export const App: React.FC = () => {
       .catch(console.error);
   }, []);
 
-  // Fetch readings & predictions on patient switch
+  // Fetch readings & predictions on patient switch (only current live session, excluding replay noise)
   const loadPatientData = async (patientId: number) => {
     try {
       const [r, p, a] = await Promise.all([
-        api.getReadings(patientId, 100),
-        api.getPredictions(patientId, 50),
+        api.getReadings(patientId, 60),
+        api.getPredictions(patientId, 30),
         api.getAlerts(patientId)
       ]);
-      setHistoryReadings(r);
-      setPredictions(p);
+      const nowMs = Date.now();
+      const recentLiveReadings = r.filter(
+        (x) => !x.is_replay && nowMs - x.ts_ms <= 5 * 60 * 1000
+      );
+      const recentLivePreds = p.filter(
+        (x) => nowMs - x.ts_ms <= 5 * 60 * 1000
+      );
+      setHistoryReadings(recentLiveReadings);
+      setPredictions(recentLivePreds);
       setAlerts(a);
     } catch (err) {
       console.error("Error loading patient data", err);
@@ -230,6 +239,14 @@ export const App: React.FC = () => {
           if (msg.type === "TELEMETRY_UPDATE") {
             // When monitoring is frozen, ignore incoming data packets to keep current view static
             if (isFrozenRef.current) {
+              return;
+            }
+
+            // Ignore WebSocket echo of our own direct Web Serial POST within the last 3s
+            if (
+              Date.now() - lastBackendPostMsRef.current < 3000 &&
+              !msg.is_replay
+            ) {
               return;
             }
 
@@ -344,72 +361,80 @@ export const App: React.FC = () => {
     if (isFrozenRef.current) return;
 
     const nowMs = Date.now();
-    const hrVal = reading.hr ?? reading.ecg_bpm ?? null;
-    const ecgHrVal = reading.ecg_bpm ?? reading.hr ?? null;
-    const spo2Val = reading.spo2 ?? null;
-    const tempVal = reading.obj ?? null;
+    const usage = getActiveSensorUsage(reading);
+    const hrVal = usage.heartActive ? (reading.hr ?? reading.ecg_bpm ?? null) : null;
+    const ecgHrVal = usage.heartActive ? (reading.ecg_bpm ?? reading.hr ?? null) : null;
+    const spo2Val = usage.spo2Active ? (reading.spo2 ?? null) : null;
+    const tempVal = usage.tempActive ? (reading.obj ?? null) : null;
     const leadsOff = Boolean(reading.lead_off);
     const fingerOff = reading.finger === false;
 
     const ecgPreview =
       reading.ecg_samples && reading.ecg_samples.length > 0
         ? reading.ecg_samples
-        : synthesizeEcgWaveFromHr(hrVal, leadsOff);
+        : synthesizeEcgWaveFromHr(hrVal, leadsOff && fingerOff);
 
     const riskCalc = computePortableSepsisRisk(
-      reading.hr,
-      reading.ecg_bpm,
-      reading.spo2,
-      reading.obj,
+      hrVal,
+      ecgHrVal,
+      spo2Val,
+      tempVal,
       2.0,
       thresholds.sepsis_risk_threshold
     );
 
-    const riskProb = riskCalc.risk ?? 0.01;
-    const isAlert = riskProb >= thresholds.sepsis_risk_threshold;
+    const riskProb = riskCalc.risk;
+    const isAlert = riskProb !== null && riskProb >= thresholds.sepsis_risk_threshold;
+
+    const activeReasons: string[] = [];
+    if (usage.tempActive) activeReasons.push(`Temp Sensor Active (${tempVal?.toFixed(1)}°C)`);
+    if (usage.heartActive) activeReasons.push(`Heart Monitor Active (${hrVal?.toFixed(0)} BPM)`);
+    if (usage.spo2Active) activeReasons.push(`SpO₂ Sensor Active (${spo2Val?.toFixed(0)}%)`);
+    if (activeReasons.length === 0) activeReasons.push("Waiting for human sensor contact...");
 
     const telemetryMsg: TelemetryUpdateMessage = {
       type: "TELEMETRY_UPDATE",
       patient_id: selectedPatientId,
-      device_id: "esp32-01",
+      device_id: "esp32-usb-live",
       ts_ms: nowMs,
       is_replay: false,
       vitals: {
         hr_bpm: hrVal,
         ecg_hr: ecgHrVal,
         spo2_pct: spo2Val,
-        temp_c: tempVal,
-        resp_rate: hrVal ? Math.round(hrVal / 4.5) : 16
+        temp_c: tempVal !== null ? Math.round((tempVal + 2.0) * 10) / 10 : null,
+        resp_rate: hrVal ? Math.round(hrVal / 4.5) : null
       },
       flags: {
-        leads_off: leadsOff,
+        leads_off: leadsOff && fingerOff,
         finger_off: fingerOff,
         adc_saturated: false
       },
       sqi: {
-        overall: leadsOff && fingerOff ? 45 : 96,
-        ecg: leadsOff ? 30 : 95,
-        hr: hrVal !== null ? 98 : 60,
-        spo2: spo2Val !== null ? 97 : 60,
-        temp: tempVal !== null ? 99 : 60,
-        reasons: ["Direct ESP32 USB Hardware Stream Active"]
+        overall: usage.anyActive ? 96 : 50,
+        ecg: usage.heartActive ? 95 : 40,
+        hr: hrVal !== null ? 98 : 40,
+        spo2: spo2Val !== null ? 97 : 40,
+        temp: tempVal !== null ? 99 : 40,
+        reasons: activeReasons
       },
       prediction: {
         risk_probability: riskProb,
         horizon_hours: 6,
         is_alert: isAlert,
-        insufficient_data: false,
+        insufficient_data: !usage.anyActive,
         rhythm_class: 0,
-        rhythm_label:
-          hrVal && hrVal > 100
-            ? "Sinus Tachycardia"
-            : hrVal && hrVal < 60
-            ? "Sinus Bradycardia"
-            : "Normal Sinus Rhythm",
+        rhythm_label: !usage.heartActive
+          ? "Awaiting Sensor Contact"
+          : hrVal && hrVal > 100
+          ? "Sinus Tachycardia"
+          : hrVal && hrVal < 60
+          ? "Sinus Bradycardia"
+          : "Normal Sinus Rhythm",
         top_features: {
           HR: hrVal ?? 0,
           O2Sat: spo2Val ?? 0,
-          Temp: tempVal ?? 0
+          Temp: tempVal !== null ? Math.round((tempVal + 2.0) * 10) / 10 : 0
         }
       },
       ecg_preview: ecgPreview,
@@ -419,10 +444,16 @@ export const App: React.FC = () => {
     setWsConnected(true);
     setLatestTelemetry(telemetryMsg);
 
+    // Only record into History, Predictions, and Backend when a human is actively using at least one sensor (max 1 Hz)
+    if (!usage.anyActive || nowMs - lastBackendPostMsRef.current < 1000) {
+      return;
+    }
+    lastBackendPostMsRef.current = nowMs;
+
     const newReading: Reading = {
       id: nowMs,
       patient_id: selectedPatientId,
-      device_id: "esp32-01",
+      device_id: "septisense-01",
       ts_ms: nowMs,
       time_synced: true,
       buffered: false,
@@ -431,27 +462,29 @@ export const App: React.FC = () => {
       spo2_pct: spo2Val,
       temp_c: tempVal,
       ecg_hr: ecgHrVal,
-      resp_rate: hrVal ? Math.round(hrVal / 4.5) : 16,
+      resp_rate: hrVal ? Math.round(hrVal / 4.5) : null,
       flags_json: JSON.stringify(telemetryMsg.flags),
       rssi: -45
     };
     setHistoryReadings((prev) => [...prev.slice(-120), newReading]);
 
-    const newPred: PredictionRecord = {
-      id: nowMs,
-      patient_id: selectedPatientId,
-      ts_ms: nowMs,
-      risk_probability: riskProb,
-      horizon_hours: 6,
-      is_alert: isAlert,
-      insufficient_data: false,
-      rhythm_class: 0,
-      rhythm_label: telemetryMsg.prediction?.rhythm_label || "Normal Sinus Rhythm",
-      features_snapshot: telemetryMsg.prediction?.top_features || {}
-    };
-    setPredictions((prev) => [newPred, ...prev.slice(0, 49)]);
+    if (riskProb !== null) {
+      const newPred: PredictionRecord = {
+        id: nowMs,
+        patient_id: selectedPatientId,
+        ts_ms: nowMs,
+        risk_probability: riskProb,
+        horizon_hours: 6,
+        is_alert: isAlert,
+        insufficient_data: false,
+        rhythm_class: 0,
+        rhythm_label: telemetryMsg.prediction?.rhythm_label || "Normal Sinus Rhythm",
+        features_snapshot: telemetryMsg.prediction?.top_features || {}
+      };
+      setPredictions((prev) => [newPred, ...prev.slice(0, 49)]);
+    }
 
-    // Also forward to backend server (both SeptiSense and server.py records schema) if reachable
+    // Forward active human reading to backend server (both SeptiSense and server.py records schema)
     api
       .postTelemetry({
         patient_id: selectedPatientId,
@@ -459,6 +492,7 @@ export const App: React.FC = () => {
         sent_ms: nowMs,
         ts_ms: nowMs,
         hr_bpm: hrVal,
+        ecg_hr: ecgHrVal,
         spo2_pct: spo2Val,
         temp_c: tempVal,
         ecg: reading.ecg_samples,
