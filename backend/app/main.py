@@ -15,6 +15,7 @@ from .ingest import register_ws_broadcaster
 from .serial_service import serial_service
 from .replay_service import replay_service
 from .routers.websocket import manager
+import server as esp32_server
 
 # Import routers
 from .routers import (
@@ -25,6 +26,8 @@ from .routers import (
 async def lifespan(app: FastAPI):
     # Startup: Ensure database tables are created
     Base.metadata.create_all(bind=engine)
+    esp32_server.init_db()
+    esp32_server.load_model()
     
     # Register WebSocket broadcast callback into ingest pipeline
     register_ws_broadcaster(manager.threadsafe_broadcast)

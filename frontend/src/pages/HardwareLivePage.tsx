@@ -70,7 +70,7 @@ interface HistoryPoint {
 interface RiskPoint {
   ts: number;
   risk: number;
-  level: "NORMAL" | "ELEVATED" | "HIGH";
+  level: "LOW" | "NORMAL" | "ELEVATED" | "HIGH";
 }
 
 interface Esp32Alert {
@@ -296,6 +296,9 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
   const [riskHistory, setRiskHistory] = useState<RiskPoint[]>([]);
   const [alerts, setAlerts] = useState<Esp32Alert[]>([]);
   const [clock, setClock] = useState(new Date().toLocaleTimeString());
+  const [backendModel, setBackendModel] = useState<any>(null);
+  const [backendPred, setBackendPred] = useState<any>(null);
+  const [backendDevice, setBackendDevice] = useState<any>(null);
 
   // Config state (persisted locally so it works portably on any laptop)
   const [cfgForm, setCfgForm] = useState<Esp32Config>(() => {
@@ -692,8 +695,95 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
     return () => window.removeEventListener("resize", onResize);
   }, [drawCharts]);
 
+  // ── Poll integrated server.py backend endpoints (/api/status, /api/latest, /api/history, /api/model) ──
+  useEffect(() => {
+    let active = true;
+    const pollBackend = async () => {
+      try {
+        const [stRes, latRes, histRes, predRes, alRes, modRes] = await Promise.all([
+          fetch("/api/status").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch("/api/latest").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch("/api/history?minutes=60").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch("/api/esp32/predictions?limit=200").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch("/api/esp32/alerts?limit=30").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch("/api/model").then((r) => (r.ok ? r.json() : null)).catch(() => null)
+        ]);
+        if (!active) return;
+        if (modRes && modRes.metrics) {
+          setBackendModel(modRes.metrics);
+        }
+        if (stRes?.devices?.[0]) {
+          setBackendDevice(stRes.devices[0]);
+        }
+        if (latRes?.prediction && latRes.prediction.status === "ok") {
+          setBackendPred(latRes.prediction);
+        }
+        if (latRes?.telemetry && !usbConnected) {
+          const t = latRes.telemetry;
+          setLiveReading((prev) => ({
+            hr: t.hr ?? prev.hr,
+            ecg_bpm: t.ecg_bpm ?? prev.ecg_bpm,
+            spo2: t.spo2 ?? prev.spo2,
+            obj: t.obj ?? prev.obj,
+            amb: t.amb ?? prev.amb,
+            led: t.led !== undefined ? Boolean(t.led) : prev.led,
+            finger: t.finger !== undefined ? Boolean(t.finger) : prev.finger,
+            lead_off: t.lead_off !== undefined ? Boolean(t.lead_off) : prev.lead_off
+          }));
+          if (t.received) {
+            setLastPacketMs(t.received * 1000);
+          }
+        }
+        if (histRes?.points?.length > 0 && !usbConnected) {
+          setHistory(histRes.points);
+          setPacketsReceived((c) => Math.max(c, histRes.points.length));
+        }
+        if (Array.isArray(predRes) && predRes.length > 0 && !usbConnected) {
+          const okPreds = predRes
+            .filter((q: any) => q.status === "ok" && q.risk != null)
+            .reverse()
+            .map((q: any) => ({
+              ts: q.ts,
+              risk: q.risk,
+              level: (q.level || "LOW") as "NORMAL" | "ELEVATED" | "HIGH"
+            }));
+          if (okPreds.length > 0) setRiskHistory(okPreds);
+        }
+        if (Array.isArray(alRes) && alRes.length > 0) {
+          setAlerts(
+            alRes.map((a: any) => ({
+              id: a.id,
+              ts: a.ts,
+              type: a.type,
+              level: a.level,
+              message: a.message,
+              acknowledged: Boolean(a.acknowledged)
+            }))
+          );
+        }
+      } catch {}
+    };
+    pollBackend();
+    const t = setInterval(pollBackend, 3000);
+    return () => {
+      active = false;
+      clearInterval(t);
+    };
+  }, [usbConnected]);
+
   const handleSaveCfg = () => {
     localStorage.setItem("septisense_esp32_cfg", JSON.stringify(cfgForm));
+    fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        alert_enabled: cfgForm.alert_enabled ? 1 : 0,
+        alert_threshold: cfgForm.alert_threshold,
+        consecutive_required: cfgForm.consecutive_required,
+        cooldown_seconds: cfgForm.cooldown_seconds,
+        temp_offset_c: cfgForm.temp_offset_c
+      })
+    }).catch(() => {});
     setCfgSaved(true);
     setTimeout(() => setCfgSaved(false), 2000);
   };
@@ -702,11 +792,19 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
     setAlerts((prev) =>
       prev.map((a) => (a.id === id ? { ...a, acknowledged: true } : a))
     );
+    fetch("/api/alerts/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id })
+    }).catch(() => {});
   };
 
   // Derived values
   const isDeviceConnected =
-    usbConnected || Boolean(serialStatus?.is_connected) || packetsReceived > 0;
+    usbConnected ||
+    Boolean(serialStatus?.is_connected) ||
+    Boolean(backendDevice?.connected) ||
+    packetsReceived > 0;
   const nowMs = Date.now();
   const st = sensorStatsRef.current;
   const totalCount = Math.max(1, st.total);
@@ -733,7 +831,7 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
     }
   };
 
-  const riskCalc = computePortableSepsisRisk(
+  const localRiskCalc = computePortableSepsisRisk(
     liveReading.hr,
     liveReading.ecg_bpm,
     liveReading.spo2,
@@ -741,6 +839,16 @@ export const HardwareLivePage: React.FC<HardwareLivePageProps> = ({
     cfgForm.temp_offset_c,
     cfgForm.alert_threshold
   );
+  const riskCalc =
+    backendPred && backendPred.status === "ok" && backendPred.risk != null
+      ? {
+          status: "ok" as const,
+          risk: Number(backendPred.risk),
+          level: (backendPred.level || "LOW") as "LOW" | "ELEVATED" | "HIGH",
+          inputs: backendPred.inputs || localRiskCalc.inputs,
+          reason: `ML Model (HistGradientBoosting + Isotonic Calibration) · bins used: ${backendPred.bins_used ?? 1}`
+        }
+      : localRiskCalc;
   const riskPct = riskCalc.risk !== null ? riskCalc.risk * 100 : null;
   const thresholdPct = cfgForm.alert_threshold * 100;
 

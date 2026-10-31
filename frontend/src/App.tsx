@@ -451,17 +451,38 @@ export const App: React.FC = () => {
     };
     setPredictions((prev) => [newPred, ...prev.slice(0, 49)]);
 
-    // Also forward to backend server if reachable
+    // Also forward to backend server (both SeptiSense and server.py records schema) if reachable
     api
       .postTelemetry({
         patient_id: selectedPatientId,
-        device_id: "esp32-01",
+        device_id: "septisense-01",
+        sent_ms: nowMs,
         ts_ms: nowMs,
         hr_bpm: hrVal,
         spo2_pct: spo2Val,
         temp_c: tempVal,
         ecg: reading.ecg_samples,
-        flags: telemetryMsg.flags
+        flags: telemetryMsg.flags,
+        records: [
+          {
+            t: nowMs,
+            mlx: 1,
+            tOK: tempVal !== null ? 1 : 0,
+            obj: tempVal,
+            amb: reading.amb ?? 25.5,
+            led: reading.led ? 1 : 0,
+            max: 1,
+            fin: !fingerOff ? 1 : 0,
+            hrOK: hrVal !== null ? 1 : 0,
+            hr: hrVal,
+            spo2OK: spo2Val !== null ? 1 : 0,
+            spo2: spo2Val,
+            ecgOK: ecgHrVal !== null ? 1 : 0,
+            ecg: ecgHrVal,
+            ecgQ: 95,
+            lo: leadsOff ? 1 : 0
+          }
+        ]
       })
       .catch(() => {});
   };

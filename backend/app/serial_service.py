@@ -249,7 +249,20 @@ class SerialService:
                         print(f"[SERIAL] CRC mismatch: calc={calc_crc}, received={received_crc}")
                         continue
                         
-                payload = TelemetryPayload(**data)
+                # Also ingest into ESP32 server.py engine & HistGradientBoosting model
+                try:
+                    import server as esp32_server
+                    esp32_server.ingest(data)
+                    esp32_server.inference_cycle()
+                except Exception as se_err:
+                    print(f"[SERIAL] ESP32 server ingest note: {se_err}")
+
+                if isinstance(data.get("records"), list) and len(data["records"]) > 0:
+                    last_rec = dict(data["records"][-1])
+                    last_rec["device_id"] = data.get("device_id", "septisense-01")
+                    payload = TelemetryPayload(**last_rec)
+                else:
+                    payload = TelemetryPayload(**data)
                 
                 # Ingest into DB & pipeline via session
                 db = SessionLocal()

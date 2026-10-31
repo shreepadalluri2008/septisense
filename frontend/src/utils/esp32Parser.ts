@@ -1,20 +1,21 @@
 /**
  * Universal Portable ESP32 Serial Line Parser & Live Risk Estimator
  *
- * Supports all ESP32 serial output formats so any laptop connected via USB
- * (Web Serial API or Backend PySerial) immediately displays live human readings:
- *  1. Flat JSON from ESP32 (MLX90614 + MAX30102 + AD8232):
+ * Supports all ESP32 serial output formats (including the exact schema in server.py):
+ *  1. server.py batch or single record JSON:
+ *     {"device_id":"septisense-01","sent_ms":12000,"records":[{"t":11000,"mlx":1,"tOK":1,"obj":35.4,"amb":26.1,"led":1,"max":1,"fin":1,"hrOK":1,"hr":78,"spo2OK":1,"spo2":98,"ecgOK":1,"ecg":76,"ecgQ":90,"lo":0}]}
+ *  2. Flat JSON from ESP32 (MLX90614 + MAX30102 + AD8232):
  *     {"hr": 78, "ecg_bpm": 76, "spo2": 98, "obj": 35.4, "amb": 26.1, "led": 1, "finger": 1, "lead_off": 0}
- *  2. SeptiSense TelemetryPayload JSON:
+ *  3. SeptiSense TelemetryPayload JSON:
  *     {"hr_bpm": 78, "spo2_pct": 98, "temp_c": 36.6, "ecg_hr": 76, "ecg": [...]}
- *  3. Nested measurements JSON:
+ *  4. Nested measurements JSON:
  *     {"measurements": {"heart_rate_bpm": 78, "spo2_percent": 98, "temperature_c": 36.6, "ecg": {"samples": [...]}}}
- *  4. Key-Value / Arduino Serial.print lines (MAX30102, MLX90614, AD8232, custom):
+ *  5. Key-Value / Arduino Serial.print lines (MAX30102, MLX90614, AD8232, custom):
  *     - "HR: 78 bpm | ECG: 76 | SpO2: 98% | Temp: 35.4 C | Amb: 26.1 C | LED: ON"
+ *     - "obj=35.4 amb=26.1 led=1 fin=1 hr=78 spo2=98 ecg=76 lo=0"
  *     - "IR=52340, BPM=78, Avg BPM=77, SpO2=98%"
  *     - "Ambient = 26.1*C   Object = 35.4*C"
- *     - "hr=78,spo2=98,obj=35.4,amb=26.1,ecg_bpm=76,finger=1"
- *  5. Comma-separated values:
+ *  6. Comma-separated values:
  *     - "78,98,35.4" or "78,76,98,35.4,26.1"
  */
 
@@ -27,6 +28,8 @@ export interface ParsedEsp32Reading {
   led: boolean | null;
   finger: boolean | null;
   lead_off: boolean | null;
+  mlx_ok?: boolean;
+  max_ok?: boolean;
   ecg_samples?: number[];
   raw_line?: string;
 }
@@ -42,7 +45,7 @@ function toFiniteNumber(val: any): number | null {
 
 function validHr(val: any): number | null {
   const n = toFiniteNumber(val);
-  if (n === null || n <= 20 || n > 260) return null;
+  if (n === null || n < 30 || n > 240) return null;
   return Math.round(n * 10) / 10;
 }
 
@@ -54,7 +57,8 @@ function validSpo2(val: any): number | null {
 
 function validTemp(val: any): number | null {
   const n = toFiniteNumber(val);
-  if (n === null || n < 10 || n > 50) return null;
+  // Matches server.py num_or_none(obj, -20, 80)
+  if (n === null || n < -20 || n > 80) return null;
   return Math.round(n * 100) / 100;
 }
 
@@ -84,67 +88,100 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
   if (jsonStart !== -1 && jsonEnd > jsonStart) {
     try {
       const obj = JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1));
-      const meas = obj.measurements || obj.telemetry || obj.vitals || obj;
+
+      // Support server.py batch format: {"device_id":..., "records":[...]}
+      let meas = obj;
+      if (Array.isArray(obj.records) && obj.records.length > 0) {
+        meas = obj.records[obj.records.length - 1];
+      } else if (obj.measurements || obj.telemetry || obj.vitals) {
+        meas = obj.measurements || obj.telemetry || obj.vitals;
+      }
+
       const flags = obj.flags || meas.flags || {};
+      const hrOK = meas.hrOK !== undefined ? Boolean(meas.hrOK) : true;
+      const spo2OK = meas.spo2OK !== undefined ? Boolean(meas.spo2OK) : true;
+      const ecgOK = meas.ecgOK !== undefined ? Boolean(meas.ecgOK) : true;
+      const tOK = meas.tOK !== undefined ? Boolean(meas.tOK) : true;
 
-      const hr =
-        validHr(meas.hr) ??
-        validHr(meas.hr_bpm) ??
-        validHr(meas.heart_rate_bpm) ??
-        validHr(meas.heart_rate) ??
-        validHr(meas.bpm) ??
-        validHr(meas.avg_bpm) ??
-        validHr(obj.hr) ??
-        validHr(obj.hr_bpm);
+      const hr = hrOK
+        ? validHr(meas.hr) ??
+          validHr(meas.hr_bpm) ??
+          validHr(meas.heart_rate_bpm) ??
+          validHr(meas.heart_rate) ??
+          validHr(meas.bpm) ??
+          validHr(meas.avg_bpm) ??
+          validHr(obj.hr) ??
+          validHr(obj.hr_bpm)
+        : null;
 
-      const ecg_bpm =
-        validHr(meas.ecg_bpm) ??
-        validHr(meas.ecg_hr) ??
-        validHr(obj.ecg_bpm) ??
-        validHr(obj.ecg_hr);
+      // In server.py ESP32 records, 'ecg' is a numeric BPM value!
+      const numericEcg =
+        !Array.isArray(meas.ecg) && typeof meas.ecg !== "object"
+          ? validHr(meas.ecg)
+          : null;
 
-      const spo2 =
-        validSpo2(meas.spo2) ??
-        validSpo2(meas.spo2_pct) ??
-        validSpo2(meas.spo2_percent) ??
-        validSpo2(meas.o2sat) ??
-        validSpo2(obj.spo2) ??
-        validSpo2(obj.spo2_pct);
+      const ecg_bpm = ecgOK
+        ? numericEcg ??
+          validHr(meas.ecg_bpm) ??
+          validHr(meas.ecg_hr) ??
+          validHr(obj.ecg_bpm) ??
+          validHr(obj.ecg_hr)
+        : null;
 
-      const tempObj =
-        validTemp(meas.obj) ??
-        validTemp(meas.temp_c) ??
-        validTemp(meas.temperature_c) ??
-        validTemp(meas.temp) ??
-        validTemp(meas.object_temp) ??
-        validTemp(meas.skin_temp) ??
-        validTemp(obj.obj) ??
-        validTemp(obj.temp_c) ??
-        validTemp(obj.temp);
+      const spo2 = spo2OK
+        ? validSpo2(meas.spo2) ??
+          validSpo2(meas.spo2_pct) ??
+          validSpo2(meas.spo2_percent) ??
+          validSpo2(meas.o2sat) ??
+          validSpo2(obj.spo2) ??
+          validSpo2(obj.spo2_pct)
+        : null;
 
-      const amb =
-        validTemp(meas.amb) ??
-        validTemp(meas.ambient) ??
-        validTemp(meas.ambient_c) ??
-        validTemp(meas.ambient_temp) ??
-        validTemp(obj.amb);
+      const tempObj = tOK
+        ? validTemp(meas.obj) ??
+          validTemp(meas.temp_c) ??
+          validTemp(meas.temperature_c) ??
+          validTemp(meas.temp) ??
+          validTemp(meas.object_temp) ??
+          validTemp(meas.skin_temp) ??
+          validTemp(obj.obj) ??
+          validTemp(obj.temp_c) ??
+          validTemp(obj.temp)
+        : null;
+
+      const amb = tOK
+        ? validTemp(meas.amb) ??
+          validTemp(meas.ambient) ??
+          validTemp(meas.ambient_c) ??
+          validTemp(meas.ambient_temp) ??
+          validTemp(obj.amb)
+        : null;
 
       const finger =
+        toBool(meas.fin) ??
         toBool(meas.finger) ??
         toBool(meas.finger_present) ??
         (flags.finger_off !== undefined ? !Boolean(flags.finger_off) : null) ??
+        toBool(obj.fin) ??
         toBool(obj.finger);
 
       const lead_off =
+        toBool(meas.lo) ??
         toBool(meas.lead_off) ??
         toBool(flags.leads_off) ??
-        (meas.ecg && meas.ecg.leads_attached !== undefined ? !Boolean(meas.ecg.leads_attached) : null) ??
+        (meas.ecg && typeof meas.ecg === "object" && meas.ecg.leads_attached !== undefined
+          ? !Boolean(meas.ecg.leads_attached)
+          : null) ??
+        toBool(obj.lo) ??
         toBool(obj.lead_off);
 
       const led =
         toBool(meas.led) ??
         toBool(obj.led) ??
         (tempObj !== null ? tempObj >= 25.0 : null);
+
+      const mlx_ok = toBool(meas.mlx) ?? toBool(meas.mlx_ok) ?? (tempObj !== null ? true : undefined);
+      const max_ok = toBool(meas.max) ?? toBool(meas.max_ok) ?? (hr !== null || spo2 !== null ? true : undefined);
 
       let ecg_samples: number[] | undefined;
       if (Array.isArray(meas.ecg)) {
@@ -163,6 +200,8 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
         amb !== null ||
         finger !== null ||
         lead_off !== null ||
+        mlx_ok !== undefined ||
+        max_ok !== undefined ||
         (ecg_samples && ecg_samples.length > 0)
       ) {
         return {
@@ -174,6 +213,8 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
           led,
           finger: finger ?? (hr !== null || spo2 !== null ? true : null),
           lead_off,
+          mlx_ok: mlx_ok ?? undefined,
+          max_ok: max_ok ?? undefined,
           ecg_samples,
           raw_line: trimmed
         };
@@ -187,7 +228,6 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
   const result: Partial<ParsedEsp32Reading> = { raw_line: trimmed };
   let matched = false;
 
-  // Match HR / BPM
   const hrMatch =
     trimmed.match(/(?:avg\s*bpm|heart\s*rate|hr_bpm|\bhr\b|\bbpm\b)\s*[:=]\s*(-?\d+(?:\.\d+)?)/i);
   if (hrMatch) {
@@ -198,7 +238,6 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
     }
   }
 
-  // Match ECG BPM
   const ecgMatch =
     trimmed.match(/(?:ecg_bpm|ecg_hr|ecg\s*bpm|\becg\b)\s*[:=]\s*(-?\d+(?:\.\d+)?)/i);
   if (ecgMatch) {
@@ -209,7 +248,6 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
     }
   }
 
-  // Match SpO2
   const spo2Match =
     trimmed.match(/(?:spo2_pct|spo2|o2sat|oxygen)\s*[:=]\s*(-?\d+(?:\.\d+)?)/i);
   if (spo2Match) {
@@ -220,7 +258,6 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
     }
   }
 
-  // Match Object / Surface / Body Temp
   const tempMatch =
     trimmed.match(/(?:object\s*temp|surface\s*temp|body\s*temp|temp_c|temperature|\bobj\b|\btemp\b)\s*[:=]\s*(-?\d+(?:\.\d+)?)/i);
   if (tempMatch) {
@@ -231,7 +268,6 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
     }
   }
 
-  // Match Ambient Temp
   const ambMatch =
     trimmed.match(/(?:ambient\s*temp|ambient|\bamb\b)\s*[:=]\s*(-?\d+(?:\.\d+)?)/i);
   if (ambMatch) {
@@ -242,19 +278,17 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
     }
   }
 
-  // Match Finger status
   if (/no\s*finger/i.test(trimmed)) {
     result.finger = false;
     matched = true;
   } else {
-    const fingerMatch = trimmed.match(/finger(?:_present)?\s*[:=]\s*(true|false|yes|no|1|0|on|off)/i);
+    const fingerMatch = trimmed.match(/(?:finger(?:_present)?|\bfin\b)\s*[:=]\s*(true|false|yes|no|1|0|on|off)/i);
     if (fingerMatch) {
       result.finger = toBool(fingerMatch[1]);
       matched = true;
     }
   }
 
-  // Match Lead Off status
   if (/leads?\s*off/i.test(trimmed)) {
     result.lead_off = true;
     matched = true;
@@ -262,14 +296,13 @@ export function parseEsp32SerialLine(line: string): Partial<ParsedEsp32Reading> 
     result.lead_off = false;
     matched = true;
   } else {
-    const leadMatch = trimmed.match(/lead_?off\s*[:=]\s*(true|false|yes|no|1|0)/i);
+    const leadMatch = trimmed.match(/(?:lead_?off|\blo\b)\s*[:=]\s*(true|false|yes|no|1|0)/i);
     if (leadMatch) {
       result.lead_off = toBool(leadMatch[1]);
       matched = true;
     }
   }
 
-  // Match LED status
   const ledMatch = trimmed.match(/\bled\b\s*[:=]\s*(on|off|true|false|1|0)/i);
   if (ledMatch) {
     result.led = toBool(ledMatch[1]);
@@ -342,12 +375,12 @@ export function computePortableSepsisRisk(
   ecgBpm: number | null,
   spo2: number | null,
   surfaceTempC: number | null,
-  tempOffsetC = 2.0,
-  alertThreshold = 0.0108
+  tempOffsetC = 0.0,
+  alertThreshold = 0.0122
 ): {
   status: "ok" | "waiting";
   risk: number | null;
-  level: "NORMAL" | "ELEVATED" | "HIGH";
+  level: "LOW" | "ELEVATED" | "HIGH";
   inputs: { HR: number; O2Sat: number; Temp_model_input: number } | null;
   reason?: string;
 } {
@@ -356,7 +389,7 @@ export function computePortableSepsisRisk(
     return {
       status: "waiting",
       risk: null,
-      level: "NORMAL",
+      level: "LOW",
       inputs: null,
       reason: "Waiting for valid sensor readings from human subject..."
     };
@@ -364,17 +397,10 @@ export function computePortableSepsisRisk(
 
   const hrInput = effectiveHr ?? 78;
   const spo2Input = spo2 ?? 98;
-  const rawTemp = surfaceTempC ?? 34.8;
-  // Apply offset if surface temperature is below 35.5C or if user configured tempOffsetC
-  const modelTemp =
-    tempOffsetC !== 0
-      ? Math.round((rawTemp + tempOffsetC) * 100) / 100
-      : rawTemp < 35.2
-      ? Math.round((rawTemp + 2.2) * 100) / 100
-      : Math.round(rawTemp * 100) / 100;
+  const rawTemp = surfaceTempC ?? 36.6;
+  const modelTemp = Math.round((rawTemp + tempOffsetC) * 100) / 100;
 
-  // Base prevalence ~0.008 (0.8%), increases smoothly with tachycardia, hypoxia, fever/hypothermia
-  let logit = -4.9;
+  let logit = -4.6;
   if (hrInput > 90) logit += (hrInput - 90) * 0.065;
   if (hrInput > 110) logit += (hrInput - 110) * 0.05;
   if (hrInput < 55) logit += (55 - hrInput) * 0.05;
@@ -383,17 +409,17 @@ export function computePortableSepsisRisk(
   if (spo2Input < 90) logit += (90 - spo2Input) * 0.35;
 
   if (modelTemp > 38.0) logit += (modelTemp - 38.0) * 1.1;
-  if (modelTemp < 36.0) logit += (36.0 - modelTemp) * 0.85;
+  if (modelTemp < 36.0) logit += (36.0 - modelTemp) * 0.45;
 
   const prob = 1 / (1 + Math.exp(-logit));
-  const clamped = Math.max(0.001, Math.min(0.99, prob));
+  const clamped = Math.max(0.002, Math.min(0.99, prob));
 
-  const level: "NORMAL" | "ELEVATED" | "HIGH" =
+  const level: "LOW" | "ELEVATED" | "HIGH" =
     clamped >= alertThreshold
       ? "HIGH"
-      : clamped >= alertThreshold * 0.65
+      : clamped >= alertThreshold * 0.5
       ? "ELEVATED"
-      : "NORMAL";
+      : "LOW";
 
   return {
     status: "ok",
