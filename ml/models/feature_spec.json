@@ -1,0 +1,158 @@
+{
+  "model_name": "SeptiSense-SepsisRisk-ModelA",
+  "version": "1.0.0",
+  "target_horizon_hours": 6,
+  "decision_threshold": 0.0077,
+  "target_sensitivity": 0.8,
+  "input_features": [
+    "Age",
+    "Gender",
+    "ICULOS",
+    "HR_is_missing",
+    "HR_val",
+    "HR_delta_baseline",
+    "HR_mean_3h",
+    "HR_min_3h",
+    "HR_max_3h",
+    "HR_std_3h",
+    "HR_missing_3h",
+    "HR_mean_6h",
+    "HR_min_6h",
+    "HR_max_6h",
+    "HR_std_6h",
+    "HR_missing_6h",
+    "HR_diff_1h",
+    "HR_diff_3h",
+    "HR_diff_6h",
+    "HR_slope_6h",
+    "O2Sat_is_missing",
+    "O2Sat_val",
+    "O2Sat_delta_baseline",
+    "O2Sat_mean_3h",
+    "O2Sat_min_3h",
+    "O2Sat_max_3h",
+    "O2Sat_std_3h",
+    "O2Sat_missing_3h",
+    "O2Sat_mean_6h",
+    "O2Sat_min_6h",
+    "O2Sat_max_6h",
+    "O2Sat_std_6h",
+    "O2Sat_missing_6h",
+    "O2Sat_diff_1h",
+    "O2Sat_diff_3h",
+    "O2Sat_diff_6h",
+    "O2Sat_slope_6h",
+    "Temp_is_missing",
+    "Temp_val",
+    "Temp_delta_baseline",
+    "Temp_mean_3h",
+    "Temp_min_3h",
+    "Temp_max_3h",
+    "Temp_std_3h",
+    "Temp_missing_3h",
+    "Temp_mean_6h",
+    "Temp_min_6h",
+    "Temp_max_6h",
+    "Temp_std_6h",
+    "Temp_missing_6h",
+    "Temp_diff_1h",
+    "Temp_diff_3h",
+    "Temp_diff_6h",
+    "Temp_slope_6h",
+    "Resp_is_missing",
+    "Resp_val",
+    "Resp_delta_baseline",
+    "Resp_mean_3h",
+    "Resp_min_3h",
+    "Resp_max_3h",
+    "Resp_std_3h",
+    "Resp_missing_3h",
+    "Resp_mean_6h",
+    "Resp_min_6h",
+    "Resp_max_6h",
+    "Resp_std_6h",
+    "Resp_missing_6h",
+    "Resp_diff_1h",
+    "Resp_diff_3h",
+    "Resp_diff_6h",
+    "Resp_slope_6h",
+    "HR_tachy_90",
+    "HR_tachy_110",
+    "Temp_fever_38",
+    "Temp_hypo_36",
+    "Resp_tachy_20",
+    "Resp_tachy_24",
+    "O2Sat_hypo_92",
+    "O2Sat_hypo_95",
+    "SIRS_vitals_score"
+  ],
+  "num_features": 80,
+  "required_sensors": [
+    "ECG (HR, Resp)",
+    "MAX30102 (SpO2, HR)",
+    "Temperature (MAX30205/DS18B20)"
+  ],
+  "min_history_hours_required": 1.0,
+  "top_features": [
+    {
+      "feature": "ICULOS",
+      "importance": 613
+    },
+    {
+      "feature": "Age",
+      "importance": 542
+    },
+    {
+      "feature": "Temp_min_6h",
+      "importance": 259
+    },
+    {
+      "feature": "Temp_delta_baseline",
+      "importance": 228
+    },
+    {
+      "feature": "Temp_max_6h",
+      "importance": 175
+    },
+    {
+      "feature": "Resp_delta_baseline",
+      "importance": 159
+    },
+    {
+      "feature": "Temp_mean_6h",
+      "importance": 155
+    },
+    {
+      "feature": "HR_max_6h",
+      "importance": 152
+    },
+    {
+      "feature": "HR_delta_baseline",
+      "importance": 152
+    },
+    {
+      "feature": "Resp_min_6h",
+      "importance": 148
+    },
+    {
+      "feature": "O2Sat_mean_6h",
+      "importance": 148
+    },
+    {
+      "feature": "HR_min_6h",
+      "importance": 138
+    },
+    {
+      "feature": "Resp_max_6h",
+      "importance": 136
+    },
+    {
+      "feature": "O2Sat_std_6h",
+      "importance": 122
+    },
+    {
+      "feature": "HR_std_6h",
+      "importance": 121
+    }
+  ]
+}

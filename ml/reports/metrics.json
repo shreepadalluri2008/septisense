@@ -1,0 +1,102 @@
+{
+  "project": "SeptiSense IoT Patient Monitoring & Sepsis Early-Warning",
+  "model_a_sepsis_risk": {
+    "prediction_horizon_hours": 6,
+    "training_cohort": {
+      "patients": 1904,
+      "observations": 73576,
+      "positive_observations": 716,
+      "prevalence_pct": 0.97
+    },
+    "held_out_test_cohort": {
+      "patients": 476,
+      "observations": 17615,
+      "positive_observations": 152,
+      "prevalence_pct": 0.86
+    },
+    "held_out_metrics": {
+      "AUROC": 0.7205,
+      "AUPRC": 0.0423,
+      "Brier_Score": 0.0085,
+      "decision_threshold": 0.0077,
+      "sensitivity": 0.8026,
+      "specificity": 0.4566,
+      "precision": 0.0127,
+      "recall": 0.8026,
+      "f1_score": 0.025,
+      "false_alarms_per_patient_day": 13.04,
+      "physionet_2019_utility_score": -1.0694,
+      "confusion_matrix": {
+        "TN": 7973,
+        "FP": 9490,
+        "FN": 30,
+        "TP": 122
+      }
+    },
+    "cross_hospital_generalization": {
+      "train_source": "Hospital System A",
+      "test_source": "Hospital System B",
+      "generalization_AUROC": 0.6512,
+      "generalization_AUPRC": 0.0226
+    },
+    "benchmark_comparisons": {
+      "baseline_logistic_regression": {
+        "AUROC": 0.6617,
+        "AUPRC": 0.0384
+      },
+      "full_vitals_reference_model": {
+        "AUROC": 0.6734,
+        "AUPRC": 0.022,
+        "delta_AUROC_gap": -0.047,
+        "delta_AUPRC_gap": -0.0203
+      }
+    }
+  },
+  "model_b_ecg_quality_and_rhythm": {
+    "dataset": "PhysioNet CinC Challenge 2017 & MIT-BIH Arrhythmia Database",
+    "sampling_rate_hz": 250,
+    "rpeak_benchmark_mitdb": {
+      "benchmark_records_evaluated": [
+        "100",
+        "101",
+        "102",
+        "103",
+        "105",
+        "115"
+      ],
+      "total_true_beats": 2190,
+      "total_detected_beats": 2168,
+      "true_positives": 2161,
+      "sensitivity": 0.9868,
+      "positive_predictive_value": 0.9968
+    },
+    "classification_performance": {
+      "Normal": {
+        "precision": 0.8769,
+        "recall": 0.8066,
+        "f1_score": 0.8403,
+        "support": 362
+      },
+      "AF": {
+        "precision": 0.4928,
+        "recall": 0.6538,
+        "f1_score": 0.562,
+        "support": 52
+      },
+      "Other": {
+        "precision": 0.6402,
+        "recall": 0.6287,
+        "f1_score": 0.6344,
+        "support": 167
+      },
+      "Noisy": {
+        "precision": 0.4118,
+        "recall": 0.7368,
+        "f1_score": 0.5283,
+        "support": 19
+      }
+    },
+    "overall_accuracy": 0.7417,
+    "macro_f1": 0.6413
+  }
+}

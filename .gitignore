@@ -1,0 +1,26 @@
+# Environments
+.venv/
+env/
+__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Test & Build
+.pytest_cache/
+*.egg-info/
+
+# Raw Data (large PhysioNet archives)
+ml/data/raw/*.zip
+ml/data/raw/*.tar.gz
+ml/data/raw/challenge-2019/
+ml/data/raw/challenge-2017/
+ml/data/raw/mitdb/
+ml/data/raw/mimic-iv/
+ml/data/raw/bidmc/
+
+# System
+.DS_Store
+*.log

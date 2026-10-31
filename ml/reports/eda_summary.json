@@ -1,0 +1,132 @@
+{
+  "title": "SeptiSense Real Clinical Data EDA Summary",
+  "hospital_system_A": {
+    "hospital_system": "Hospital System A",
+    "patients_count": 1500,
+    "total_icu_hours": 58327,
+    "mean_los_hours": 38.88466666666667,
+    "median_los_hours": 38.0,
+    "sepsis_patient_count": 143,
+    "sepsis_patient_prevalence_pct": 9.53,
+    "sepsis_positive_hours_pct": 2.34,
+    "missingness_rates_pct": {
+      "HR": 8.51,
+      "O2Sat": 12.93,
+      "Temp": 66.02,
+      "Resp": 11.09
+    },
+    "vitals_stats": {
+      "HR": {
+        "mean": 84.32,
+        "median": 83.0,
+        "std": 16.74,
+        "min": 25.0,
+        "max": 182.0
+      },
+      "O2Sat": {
+        "mean": 97.19,
+        "median": 98.0,
+        "std": 3.07,
+        "min": 23.0,
+        "max": 100.0
+      },
+      "Temp": {
+        "mean": 36.96,
+        "median": 37.0,
+        "std": 0.77,
+        "min": 23.6,
+        "max": 40.5
+      },
+      "Resp": {
+        "mean": 18.56,
+        "median": 18.0,
+        "std": 5.33,
+        "min": 1.0,
+        "max": 67.0
+      },
+      "Age": {
+        "mean": 62.41,
+        "median": 64.67,
+        "std": 16.4,
+        "min": 18.11,
+        "max": 88.98
+      }
+    },
+    "male_ratio_pct": 60.0
+  },
+  "hospital_system_B": {
+    "hospital_system": "Hospital System B",
+    "patients_count": 1500,
+    "total_icu_hours": 57631,
+    "mean_los_hours": 38.42066666666667,
+    "median_los_hours": 39.0,
+    "sepsis_patient_count": 83,
+    "sepsis_patient_prevalence_pct": 5.53,
+    "sepsis_positive_hours_pct": 1.37,
+    "missingness_rates_pct": {
+      "HR": 12.33,
+      "O2Sat": 14.38,
+      "Temp": 66.52,
+      "Resp": 21.25
+    },
+    "vitals_stats": {
+      "HR": {
+        "mean": 83.37,
+        "median": 82.0,
+        "std": 17.86,
+        "min": 26.0,
+        "max": 178.0
+      },
+      "O2Sat": {
+        "mean": 97.11,
+        "median": 98.0,
+        "std": 3.1,
+        "min": 24.0,
+        "max": 100.0
+      },
+      "Temp": {
+        "mean": 36.79,
+        "median": 36.8,
+        "std": 0.73,
+        "min": 30.9,
+        "max": 40.6
+      },
+      "Resp": {
+        "mean": 18.45,
+        "median": 18.0,
+        "std": 4.51,
+        "min": 1.0,
+        "max": 61.5
+      },
+      "Age": {
+        "mean": 60.39,
+        "median": 62.0,
+        "std": 16.7,
+        "min": 17.0,
+        "max": 100.0
+      }
+    },
+    "male_ratio_pct": 56.0
+  },
+  "ecg_challenge_2017": {
+    "total_ecg_recordings": 8528,
+    "rhythm_class_distribution": {
+      "Normal Sinus Rhythm (N)": {
+        "count": 5076,
+        "percentage": 59.52
+      },
+      "Other Rhythm Irregularity (O)": {
+        "count": 2415,
+        "percentage": 28.32
+      },
+      "Atrial Fibrillation (AF) (A)": {
+        "count": 758,
+        "percentage": 8.89
+      },
+      "Noisy / Uninterpretable (~)": {
+        "count": 279,
+        "percentage": 3.27
+      }
+    }
+  }
+}
