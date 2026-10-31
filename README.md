@@ -7,6 +7,14 @@
 [![Vite](https://img.shields.io/badge/Vite-5.4-purple.svg)](https://vitejs.dev/)
 [![Held-Out AUROC](https://img.shields.io/badge/Model%20A%20AUROC-0.7205-brightgreen.svg)](docs/EVALUATION.md)
 [![QRS Sensitivity](https://img.shields.io/badge/Model%20B%20QRS-98.68%25-brightgreen.svg)](docs/EVALUATION.md)
+[![Live Website](https://img.shields.io/badge/Live%20Website-Online%20(Cloudflare)-success?style=for-the-badge&logo=cloudflare)](https://maximize-reggae-equations-custody.trycloudflare.com)
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Dashboard-blue?style=for-the-badge&logo=github)](https://shreepadalluri2008.github.io/septisense/)
+
+### 🌐 Live Public Access Links
+- **Primary Live Dashboard (Unified Backend & WebSocket Feed)**:  
+  👉 **[https://maximize-reggae-equations-custody.trycloudflare.com](https://maximize-reggae-equations-custody.trycloudflare.com)**
+- **GitHub Pages Dashboard**:  
+  👉 **[https://shreepadalluri2008.github.io/septisense/](https://shreepadalluri2008.github.io/septisense/)**
 
 > [!CAUTION]
 > **MANDATORY REGULATORY NOTICE**: Educational and research prototype. Not clinically validated. Not a substitute for medical advice. Never output diagnoses; models estimate future deterioration risk over an $H=6\text{h}$ prediction horizon.
