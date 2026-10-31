@@ -75,7 +75,7 @@ app.include_router(care.aux_router)
 app.include_router(replay.router)
 app.include_router(websocket.router)
 
-@app.get("/")
+@app.get("/api")
 def root():
     return {
         "project": settings.PROJECT_NAME,
@@ -93,3 +93,12 @@ def health_check():
         "replay_active": replay_service.is_active,
         "regulatory_notice": settings.REGULATORY_NOTICE
     }
+
+# Mount static React frontend build if dist folder exists (for production single-port deployment)
+frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+else:
+    @app.get("/")
+    def fallback_root():
+        return root()

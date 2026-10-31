@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  septisense:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: septisense-platform
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - PYTHONPATH=/app
+    restart: unless-stopped

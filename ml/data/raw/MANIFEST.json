@@ -1,0 +1,57 @@
+{
+  "project": "SeptiSense IoT Patient Monitoring & Sepsis Early-Warning",
+  "generated_at": "2026-10-30 13:27:41 UTC",
+  "datasets": {
+    "challenge_2019": {
+      "dataset": "PhysioNet Challenge 2019 (Early Prediction of Sepsis)",
+      "version": "1.0.0",
+      "source_url": "https://physionet.org/content/challenge-2019/1.0.0/",
+      "storage_path": "data/raw/challenge-2019",
+      "file_count": 3000,
+      "total_size_bytes": 19044518,
+      "download_date": "2026-10-30 13:29:24 UTC",
+      "status": "VERIFIED",
+      "notes": "Includes 1500 patients from Hospital System A and 1500 patients from Hospital System B."
+    },
+    "challenge_2017": {
+      "dataset": "PhysioNet Challenge 2017 (AF Classification from Short Single Lead ECG)",
+      "version": "1.0.0",
+      "source_url": "https://physionet.org/content/challenge-2017/1.0.0/",
+      "storage_path": "data/raw/challenge-2017",
+      "file_count": 17061,
+      "total_size_bytes": 266722776,
+      "download_date": "2026-10-30 13:29:38 UTC",
+      "status": "VERIFIED"
+    },
+    "mitdb": {
+      "dataset": "MIT-BIH Arrhythmia Database",
+      "version": "1.0.0",
+      "source_url": "https://physionet.org/content/mitdb/1.0.0/",
+      "storage_path": "data/raw/mitdb",
+      "file_count": 42,
+      "total_size_bytes": 27380404,
+      "download_date": "2026-10-30 13:30:29 UTC",
+      "status": "VERIFIED"
+    },
+    "mimic_iv_demo": {
+      "dataset": "MIMIC-IV Clinical Database Demo",
+      "version": "2.2",
+      "source_url": "https://physionet.org/content/mimic-iv-demo/2.2/",
+      "storage_path": "data/raw/mimic-iv-demo",
+      "file_count": 36,
+      "total_size_bytes": 32414108,
+      "download_date": "2026-10-30 13:31:17 UTC",
+      "status": "VERIFIED"
+    },
+    "bidmc": {
+      "dataset": "BIDMC PPG and Respiration Dataset",
+      "version": "1.0.0",
+      "source_url": "https://physionet.org/content/bidmc/1.0.0/",
+      "storage_path": "data/raw/bidmc",
+      "file_count": 10,
+      "total_size_bytes": 3243164,
+      "download_date": "2026-10-30 13:32:08 UTC",
+      "status": "VERIFIED"
+    }
+  }
+}

@@ -24,3 +24,5 @@ ml/data/raw/bidmc/
 # System
 .DS_Store
 *.log
+*.db
+
