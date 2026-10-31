@@ -19,6 +19,7 @@ ml/data/raw/challenge-2019/
 ml/data/raw/challenge-2017/
 ml/data/raw/mitdb/
 ml/data/raw/mimic-iv/
+ml/data/raw/mimic-iv-demo/
 ml/data/raw/bidmc/
 
 # System
