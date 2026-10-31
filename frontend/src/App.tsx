@@ -13,6 +13,7 @@ import { MedicinesPage } from "./pages/MedicinesPage";
 import { DoctorsPage } from "./pages/DoctorsPage";
 import { ModelCardPage } from "./pages/ModelCardPage";
 import { SettingsDevicePage } from "./pages/SettingsDevicePage";
+import { HardwareLivePage } from "./pages/HardwareLivePage";
 
 // Types & API
 import {
@@ -424,6 +425,8 @@ export const App: React.FC = () => {
             selectedPatientId={selectedPatientId}
           />
         )}
+
+        {currentTab === "hardware" && <HardwareLivePage />}
       </main>
 
       {/* Permanent Regulatory Disclaimer Footer */}

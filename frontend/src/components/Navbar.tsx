@@ -14,7 +14,8 @@ import {
   Stethoscope,
   Cpu,
   Settings,
-  HelpCircle
+  HelpCircle,
+  Zap
 } from "lucide-react";
 import { Patient } from "../types";
 
@@ -27,7 +28,8 @@ export type NavTab =
   | "medicines"
   | "doctors"
   | "modelcard"
-  | "settings";
+  | "settings"
+  | "hardware";
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -70,7 +72,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: "medicines" as NavTab, label: "Medications", icon: Pill },
     { id: "doctors" as NavTab, label: "Care & Triage", icon: Stethoscope },
     { id: "modelcard" as NavTab, label: "Model Card", icon: Cpu },
-    { id: "settings" as NavTab, label: "Device & Replay", icon: Settings }
+    { id: "settings" as NavTab, label: "Device & Replay", icon: Settings },
+    { id: "hardware" as NavTab, label: "ESP32 Hardware Live", icon: Zap }
   ];
 
   const currentPatient = patients.find((p) => p.id === selectedPatientId);
