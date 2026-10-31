@@ -2,8 +2,9 @@
 Pydantic Schemas for Request / Response Validation
 """
 
+import time
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 # --- Telemetry & Vitals ---
 
@@ -15,18 +16,66 @@ class TelemetryFlags(BaseModel):
 class TelemetryPayload(BaseModel):
     device_id: str = "esp32-01"
     patient_id: int = 1
-    ts_ms: float
+    ts_ms: float = Field(default_factory=lambda: time.time() * 1000.0)
     time_synced: bool = True
     buffered: bool = False
     is_replay: bool = False
     hr_bpm: Optional[float] = None
     spo2_pct: Optional[float] = None
     temp_c: Optional[float] = None
+    ecg_hr: Optional[float] = None
+    amb_c: Optional[float] = None
+    led_on: Optional[bool] = None
     ecg: Optional[List[int]] = None
     ecg_fs: int = 250
     flags: TelemetryFlags = Field(default_factory=TelemetryFlags)
     rssi: int = -60
     crc: Optional[int] = None # CRC32 validation field for Serial lines
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_esp32_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        meas = out.get("measurements") or out.get("telemetry") or out
+        if isinstance(meas, dict):
+            if out.get("hr_bpm") is None:
+                for k in ("hr", "heart_rate_bpm", "heart_rate", "bpm", "avg_bpm"):
+                    if meas.get(k) is not None:
+                        out["hr_bpm"] = meas.get(k)
+                        break
+            if out.get("ecg_hr") is None:
+                for k in ("ecg_bpm", "ecg_hr"):
+                    if meas.get(k) is not None:
+                        out["ecg_hr"] = meas.get(k)
+                        break
+            if out.get("spo2_pct") is None:
+                for k in ("spo2", "spo2_percent", "o2sat"):
+                    if meas.get(k) is not None:
+                        out["spo2_pct"] = meas.get(k)
+                        break
+            if out.get("temp_c") is None:
+                for k in ("obj", "temperature_c", "temp", "object_temp", "skin_temp"):
+                    if meas.get(k) is not None:
+                        out["temp_c"] = meas.get(k)
+                        break
+            if out.get("amb_c") is None:
+                for k in ("amb", "ambient", "ambient_c", "ambient_temp"):
+                    if meas.get(k) is not None:
+                        out["amb_c"] = meas.get(k)
+                        break
+            if out.get("led_on") is None and meas.get("led") is not None:
+                out["led_on"] = bool(meas.get("led"))
+            flags = dict(out.get("flags") or {})
+            if meas.get("finger") is not None:
+                flags["finger_off"] = not bool(meas.get("finger"))
+            if meas.get("lead_off") is not None:
+                flags["leads_off"] = bool(meas.get("lead_off"))
+            out["flags"] = flags
+        if out.get("ts_ms") is None:
+            out["ts_ms"] = time.time() * 1000.0
+        return out
 
 class ReadingResponse(BaseModel):
     id: int

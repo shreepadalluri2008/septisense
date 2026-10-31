@@ -2,19 +2,22 @@ import React, { useState, useEffect, useRef } from "react";
 import { SerialStatus, ReplayStatus, DeviceInfo } from "../types";
 import { Cpu, Radio, RefreshCw, Play, Square, CheckCircle2, AlertCircle, HardDrive, Zap, Info, Usb, Laptop } from "lucide-react";
 import { api } from "../api";
+import { parseEsp32SerialLine, ParsedEsp32Reading } from "../utils/esp32Parser";
 
 interface SettingsDevicePageProps {
   serialStatus: SerialStatus | null;
   replayStatus: ReplayStatus | null;
   onRefreshStatus: () => void;
   selectedPatientId: number;
+  onHardwareReading?: (reading: ParsedEsp32Reading) => void;
 }
 
 export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
   serialStatus,
   replayStatus,
   onRefreshStatus,
-  selectedPatientId
+  selectedPatientId,
+  onHardwareReading
 }) => {
   const [ports, setPorts] = useState<string[]>([]);
   const [selectedPort, setSelectedPort] = useState<string>("");
@@ -54,25 +57,58 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
       webSerialReaderRef.current = reader;
 
       let buffer = "";
+      let merged: ParsedEsp32Reading = {
+        hr: null,
+        ecg_bpm: null,
+        spo2: null,
+        obj: null,
+        amb: null,
+        led: null,
+        finger: null,
+        lead_off: null
+      };
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         buffer += value;
-        const lines = buffer.split("\n");
+        const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() || "";
         for (const line of lines) {
           const trimmed = line.trim();
-          if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-            try {
-              const payload = JSON.parse(trimmed);
-              if (!payload.patient_id) {
-                payload.patient_id = selectedPatientId;
-              }
-              await api.postTelemetry(payload);
-              setWebSerialPackets((prev) => prev + 1);
-            } catch (err) {
-              // skip parse errors
+          if (!trimmed) continue;
+          const parsed = parseEsp32SerialLine(trimmed);
+          if (parsed) {
+            merged = {
+              hr: parsed.hr !== undefined && parsed.hr !== null ? parsed.hr : merged.hr,
+              ecg_bpm: parsed.ecg_bpm !== undefined && parsed.ecg_bpm !== null ? parsed.ecg_bpm : merged.ecg_bpm,
+              spo2: parsed.spo2 !== undefined && parsed.spo2 !== null ? parsed.spo2 : merged.spo2,
+              obj: parsed.obj !== undefined && parsed.obj !== null ? parsed.obj : merged.obj,
+              amb: parsed.amb !== undefined && parsed.amb !== null ? parsed.amb : merged.amb,
+              led: parsed.led !== undefined && parsed.led !== null ? parsed.led : merged.led,
+              finger: parsed.finger !== undefined && parsed.finger !== null ? parsed.finger : merged.finger,
+              lead_off: parsed.lead_off !== undefined && parsed.lead_off !== null ? parsed.lead_off : merged.lead_off,
+              ecg_samples: parsed.ecg_samples || merged.ecg_samples
+            };
+            setWebSerialPackets((prev) => prev + 1);
+            if (onHardwareReading) {
+              onHardwareReading(merged);
             }
+            api
+              .postTelemetry({
+                patient_id: selectedPatientId,
+                device_id: "esp32-01",
+                ts_ms: Date.now(),
+                hr_bpm: merged.hr ?? merged.ecg_bpm,
+                spo2_pct: merged.spo2,
+                temp_c: merged.obj,
+                ecg: merged.ecg_samples,
+                flags: {
+                  leads_off: Boolean(merged.lead_off),
+                  finger_off: merged.finger === false,
+                  adc_saturated: false
+                }
+              })
+              .catch(() => {});
           }
         }
       }
