@@ -18,7 +18,7 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
 }) => {
   const [ports, setPorts] = useState<string[]>([]);
   const [selectedPort, setSelectedPort] = useState<string>("");
-  const [baudRate, setBaudRate] = useState<number>(921600);
+  const [baudRate, setBaudRate] = useState<number>(115200);
   const [loadingPorts, setLoadingPorts] = useState(false);
   const [serialConnecting, setSerialConnecting] = useState(false);
 
@@ -43,7 +43,7 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
       setWebSerialConnecting(true);
       setWebSerialError(null);
       const port = await (navigator as any).serial.requestPort();
-      await port.open({ baudRate: 921600 });
+      await port.open({ baudRate: baudRate });
       setWebSerialPort(port);
       setWebSerialConnected(true);
 
@@ -185,7 +185,7 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
           <div>
             <h2 className="text-lg font-bold text-slate-100">Telemetry Ingest & Hardware Control</h2>
             <p className="text-xs text-slate-400">
-              Manage ESP32 USB serial link (921,600 baud + CRC32) and PhysioNet CinC 2019 Replay Engine
+              Manage ESP32 USB serial link (flexible baud rate — auto-matches your ESP32 firmware) and PhysioNet CinC 2019 Replay Engine
             </p>
           </div>
         </div>
@@ -206,7 +206,7 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-cyan-400" />
               <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">
-                ESP32 Serial Ingest (921,600 Baud)
+                ESP32 Serial Ingest (Flexible Baud Rate)
               </h3>
             </div>
 
@@ -254,12 +254,39 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
           {/* Tab Content: Mode A - Browser Web Serial (For client laptop with USB) */}
           {connectionMode === "browser" && (
             <div className="space-y-4 text-xs">
+              {/* Baud Rate Selector for Web Serial */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Baud Rate (match your ESP32 firmware)</label>
+                <select
+                  value={baudRate}
+                  onChange={(e) => setBaudRate(Number(e.target.value))}
+                  disabled={webSerialConnected}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 text-sm font-mono focus:outline-none focus:border-cyan-400 disabled:opacity-50"
+                >
+                  <option value={9600}>9,600</option>
+                  <option value={19200}>19,200</option>
+                  <option value={38400}>38,400</option>
+                  <option value={57600}>57,600</option>
+                  <option value={74880}>74,880</option>
+                  <option value={115200}>115,200 (ESP32 default)</option>
+                  <option value={230400}>230,400</option>
+                  <option value={460800}>460,800</option>
+                  <option value={921600}>921,600 (High-speed)</option>
+                  <option value={1000000}>1,000,000 (1 Mbaud)</option>
+                  <option value={1500000}>1,500,000</option>
+                  <option value={2000000}>2,000,000 (2 Mbaud)</option>
+                </select>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  Must match the <code className="font-mono">Serial.begin()</code> value in your ESP32 sketch. Common for high-speed sensors: 921,600 – 2,000,000.
+                </p>
+              </div>
+
               <div className="p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-200 space-y-1">
                 <p className="font-semibold flex items-center gap-1.5">
                   <Usb className="w-4 h-4 text-cyan-400" /> Plug ESP32 Directly into This Laptop
                 </p>
                 <p className="text-slate-300 text-[11px] leading-relaxed">
-                  Your browser (Chrome, Edge, Opera) will communicate directly with the USB port on this laptop at 921,600 baud and stream 250 Hz telemetry to the platform in real time. Zero software installation required on this device.
+                  Your browser (Chrome, Edge, Opera) will communicate directly with the USB port on this laptop at <span className="font-mono font-bold text-cyan-300">{baudRate.toLocaleString()} baud</span> and stream telemetry to the platform in real time. Zero software installation required on this device.
                 </p>
               </div>
 
@@ -280,7 +307,7 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
               <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-2 font-mono text-slate-300">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Connection Transport:</span>
-                  <span className="font-bold text-cyan-300">Browser Web Serial (921,600 Baud)</span>
+                  <span className="font-bold text-cyan-300">Browser Web Serial ({baudRate.toLocaleString()} Baud)</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Packets Ingested to Server:</span>
@@ -310,7 +337,7 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
                     className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold uppercase tracking-wider text-xs transition-all shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     <Usb className="w-4 h-4" />
-                    <span>{webSerialConnecting ? "Requesting USB Port..." : "Select & Connect USB Port (921,600 Baud)"}</span>
+                    <span>{webSerialConnecting ? "Requesting USB Port..." : `Select & Connect USB Port (${baudRate.toLocaleString()} Baud)`}</span>
                   </button>
                 )}
               </div>
@@ -363,9 +390,18 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
                     disabled={serialStatus?.is_connected}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 text-sm font-mono focus:outline-none focus:border-cyan-400 disabled:opacity-50"
                   >
-                    <option value={921600}>921,600 (Target High-Speed)</option>
+                    <option value={9600}>9,600</option>
+                    <option value={19200}>19,200</option>
+                    <option value={38400}>38,400</option>
+                    <option value={57600}>57,600</option>
+                    <option value={74880}>74,880</option>
+                    <option value={115200}>115,200 (ESP32 default)</option>
+                    <option value={230400}>230,400</option>
                     <option value={460800}>460,800</option>
-                    <option value={115200}>115,200 (Legacy)</option>
+                    <option value={921600}>921,600 (High-speed)</option>
+                    <option value={1000000}>1,000,000 (1 Mbaud)</option>
+                    <option value={1500000}>1,500,000</option>
+                    <option value={2000000}>2,000,000 (2 Mbaud)</option>
                   </select>
                 </div>
 

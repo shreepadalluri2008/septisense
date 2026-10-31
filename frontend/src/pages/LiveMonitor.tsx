@@ -2,7 +2,6 @@ import React from "react";
 import { ECGWaveform } from "../components/ECGWaveform";
 import { VitalTile } from "../components/VitalTile";
 import { RiskGauge } from "../components/RiskGauge";
-import { AlertBanner } from "../components/AlertBanner";
 import { TelemetryUpdateMessage, Reading, Alert, DeviceInfo } from "../types";
 import { Activity, ShieldCheck, Cpu, Wifi, Radio, Clock, AlertTriangle, Pause, Play } from "lucide-react";
 
@@ -53,8 +52,7 @@ export const LiveMonitor: React.FC<LiveMonitorProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Active Critical Emergency Banner (Warning notifications are removed from Live Monitor and preserved in the Notification Center) */}
-      <AlertBanner alerts={criticalAlerts} onAcknowledge={onAcknowledgeAlert} />
+      {/* Alert banners removed from Live Monitor — all notifications are handled in the Notification Center tab */}
 
       {/* Top Telemetry Header & Status Bar */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl px-6 py-4 flex flex-wrap items-center justify-between gap-4">
@@ -110,7 +108,7 @@ export const LiveMonitor: React.FC<LiveMonitorProps> = ({
             <Cpu className="w-4 h-4 text-cyan-400" />
             <span>{device?.device_id || "ESP32-01"}</span>
             <span className="text-slate-500">•</span>
-            <span className="text-emerald-400">921,600 baud</span>
+            <span className="text-emerald-400">Flexible Baud</span>
           </div>
 
           <div className="flex items-center gap-1.5 text-slate-300 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
