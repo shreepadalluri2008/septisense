@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { SerialStatus, ReplayStatus, DeviceInfo } from "../types";
-import { Cpu, Radio, RefreshCw, Play, Square, CheckCircle2, AlertCircle, HardDrive, Zap, Info, Usb, Laptop } from "lucide-react";
-import { api } from "../api";
+import { Cpu, Radio, RefreshCw, Play, Square, CheckCircle2, AlertCircle, HardDrive, Zap, Info, Usb, Laptop, Globe, Link } from "lucide-react";
+import { api, getBackendBase, setBackendBase } from "../api";
 
 interface SettingsDevicePageProps {
   serialStatus: SerialStatus | null;
@@ -24,6 +24,10 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
 
   // Connection mode: 'browser' (for connecting to this laptop) or 'host' (for connecting to server machine)
   const [connectionMode, setConnectionMode] = useState<"browser" | "host">("browser");
+
+  // Backend Server URL configuration
+  const [backendUrl, setBackendUrlState] = useState<string>(() => getBackendBase());
+  const [backendStatus, setBackendStatus] = useState<string | null>(null);
 
   // Web Serial API (Direct USB connection from this laptop's browser)
   const isWebSerialSupported = typeof navigator !== "undefined" && "serial" in navigator;
@@ -557,6 +561,57 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
               )}
             </div>
           </div>
+        </div>
+
+        {/* Backend & Cloud Connectivity Card */}
+        <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                Cloud & Backend Server Endpoint
+                <span className="text-[11px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
+                  {backendUrl ? "Custom Endpoint" : "Autonomous / Co-Hosted"}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Configure remote FastAPI server (e.g. Cloudflare tunnel or local network) when running standalone on GitHub Pages.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+            <div className="md:col-span-3 space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300">FastAPI Server URL (leave blank for default host)</label>
+              <input
+                type="text"
+                placeholder="https://...trycloudflare.com or http://localhost:8000"
+                value={backendUrl}
+                onChange={(e) => setBackendUrlState(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-mono focus:border-cyan-500 focus:outline-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setBackendBase(backendUrl);
+                  setBackendStatus("Endpoint saved! Reloading...");
+                  setTimeout(() => {
+                    window.location.reload();
+                  }, 600);
+                }}
+                className="w-full py-2 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow cursor-pointer"
+              >
+                Save & Connect
+              </button>
+            </div>
+          </div>
+          {backendStatus && (
+            <p className="text-xs font-mono text-emerald-400 animate-in fade-in">{backendStatus}</p>
+          )}
         </div>
       </div>
     </div>
