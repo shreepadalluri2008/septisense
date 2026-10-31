@@ -143,7 +143,7 @@ class DeviceResponse(BaseModel):
 
 class SerialConnectRequest(BaseModel):
     port: str
-    baud_rate: int = 921600
+    baud_rate: int = 115200
 
 class SerialStatusResponse(BaseModel):
     port: Optional[str]

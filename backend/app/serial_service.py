@@ -19,9 +19,11 @@ from .database import SessionLocal
 from .ingest import process_telemetry_payload
 
 class SerialService:
+    COMMON_BAUDS = [115200, 230400, 460800, 921600, 100000, 128000, 250000, 500000, 1000000]
+
     def __init__(self):
         self.port: Optional[str] = None
-        self.baud: int = 921600
+        self.baud: int = 115200
         self.ser: Optional[serial.Serial] = None
         self.is_running: bool = False
         self.is_connected: bool = False
@@ -65,7 +67,21 @@ class SerialService:
                 return p["port"]
         return None
 
-    def connect(self, port: Optional[str] = None, baud: int = 921600) -> bool:
+    def auto_detect_baud(self, port: str) -> int:
+        """Probes common ESP32 baud rates (100k+ to 1M) for valid JSON/ASCII lines."""
+        for candidate in self.COMMON_BAUDS:
+            try:
+                with serial.Serial(port, candidate, timeout=0.6) as test_ser:
+                    raw = test_ser.readline()
+                    if raw:
+                        decoded = raw.decode("utf-8", errors="ignore").strip()
+                        if "{" in decoded or ":" in decoded or decoded.isprintable():
+                            return candidate
+            except Exception:
+                continue
+        return 115200
+
+    def connect(self, port: Optional[str] = None, baud: int = 115200) -> bool:
         with self.lock:
             if self.is_connected:
                 self.disconnect()
@@ -76,7 +92,7 @@ class SerialService:
                 return False
                 
             self.port = target_port
-            self.baud = baud
+            self.baud = self.auto_detect_baud(target_port) if baud <= 0 else baud
             try:
                 self.ser = serial.Serial(self.port, self.baud, timeout=1.0)
                 self.is_connected = True

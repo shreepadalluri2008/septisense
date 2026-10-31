@@ -25,7 +25,7 @@ class Settings(BaseModel):
     ECG_SPEC_PATH: Path = PROJECT_ROOT / "ml" / "models" / "ecg_feature_spec.json"
     
     # Serial Defaults
-    DEFAULT_BAUD: int = int(os.getenv("DEFAULT_BAUD", "921600"))
+    DEFAULT_BAUD: int = int(os.getenv("DEFAULT_BAUD", "115200"))
     SERIAL_PORT: str = os.getenv("SERIAL_PORT", "AUTO")
     
     # Regulatory Notice

@@ -108,7 +108,7 @@ export const LiveMonitor: React.FC<LiveMonitorProps> = ({
             <Cpu className="w-4 h-4 text-cyan-400" />
             <span>{device?.device_id || "ESP32-01"}</span>
             <span className="text-slate-500">•</span>
-            <span className="text-emerald-400">Flexible Baud</span>
+            <span className="text-emerald-400">Flexible Baud (1,15,200+)</span>
           </div>
 
           <div className="flex items-center gap-1.5 text-slate-300 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">

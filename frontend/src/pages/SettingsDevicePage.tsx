@@ -19,6 +19,7 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
   const [ports, setPorts] = useState<string[]>([]);
   const [selectedPort, setSelectedPort] = useState<string>("");
   const [baudRate, setBaudRate] = useState<number>(115200);
+  const [autoBaudMode, setAutoBaudMode] = useState<boolean>(true);
   const [loadingPorts, setLoadingPorts] = useState(false);
   const [serialConnecting, setSerialConnecting] = useState(false);
 
@@ -254,30 +255,53 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
           {/* Tab Content: Mode A - Browser Web Serial (For client laptop with USB) */}
           {connectionMode === "browser" && (
             <div className="space-y-4 text-xs">
-              {/* Baud Rate Selector for Web Serial */}
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Baud Rate (match your ESP32 firmware)</label>
-                <select
-                  value={baudRate}
-                  onChange={(e) => setBaudRate(Number(e.target.value))}
-                  disabled={webSerialConnected}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 text-sm font-mono focus:outline-none focus:border-cyan-400 disabled:opacity-50"
-                >
-                  <option value={9600}>9,600</option>
-                  <option value={19200}>19,200</option>
-                  <option value={38400}>38,400</option>
-                  <option value={57600}>57,600</option>
-                  <option value={74880}>74,880</option>
-                  <option value={115200}>115,200 (ESP32 default)</option>
-                  <option value={230400}>230,400</option>
-                  <option value={460800}>460,800</option>
-                  <option value={921600}>921,600 (High-speed)</option>
-                  <option value={1000000}>1,000,000 (1 Mbaud)</option>
-                  <option value={1500000}>1,500,000</option>
-                  <option value={2000000}>2,000,000 (2 Mbaud)</option>
-                </select>
-                <p className="mt-1 text-[10px] text-slate-500">
-                  Must match the <code className="font-mono">Serial.begin()</code> value in your ESP32 sketch. Common for high-speed sensors: 921,600 – 2,000,000.
+              {/* Flexible Baud Rate Selector for Web Serial */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-slate-300 font-semibold">Flexible ESP32 Baud Rate (1,00,000+ Adaptive)</label>
+                  <label className="flex items-center gap-1.5 text-[11px] text-emerald-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoBaudMode}
+                      onChange={(e) => setAutoBaudMode(e.target.checked)}
+                      className="rounded accent-emerald-500"
+                    />
+                    <span>Auto-Adapt to ESP32 Sensor</span>
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    value={baudRate}
+                    onChange={(e) => setBaudRate(Number(e.target.value))}
+                    disabled={webSerialConnected}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 text-sm font-mono focus:outline-none focus:border-cyan-400 disabled:opacity-50"
+                  >
+                    <option value={100000}>1,00,000 (100k Baud)</option>
+                    <option value={115200}>1,15,200 (ESP32 Standard 1.15L)</option>
+                    <option value={128000}>1,28,000 (1.28L Baud)</option>
+                    <option value={230400}>2,30,400 (2.30L Baud)</option>
+                    <option value={250000}>2,50,000 (2.50L Baud)</option>
+                    <option value={460800}>4,60,800 (4.60L Baud)</option>
+                    <option value={500000}>5,00,000 (5.00L Baud)</option>
+                    <option value={921600}>9,21,600 (9.21L High-Speed)</option>
+                    <option value={1000000}>10,00,000 (1M Baud)</option>
+                    <option value={1500000}>15,00,000 (1.5M Baud)</option>
+                    <option value={2000000}>20,00,000 (2M Baud)</option>
+                  </select>
+                  <input
+                    type="number"
+                    min={9600}
+                    max={5000000}
+                    step={100}
+                    value={baudRate}
+                    onChange={(e) => setBaudRate(Math.max(9600, Number(e.target.value) || 115200))}
+                    disabled={webSerialConnected}
+                    placeholder="Custom baud (e.g. 115200)"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 text-sm font-mono focus:outline-none focus:border-cyan-400 disabled:opacity-50"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Flexible baud rate automatically adapts to your ESP32 sensor (~1,00,000+ / 1,15,200 baud or any custom value).
                 </p>
               </div>
 
@@ -381,28 +405,40 @@ export const SettingsDevicePage: React.FC<SettingsDevicePageProps> = ({
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Baud Rate</label>
-                  <select
-                    value={baudRate}
-                    onChange={(e) => setBaudRate(Number(e.target.value))}
-                    disabled={serialStatus?.is_connected}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 text-sm font-mono focus:outline-none focus:border-cyan-400 disabled:opacity-50"
-                  >
-                    <option value={9600}>9,600</option>
-                    <option value={19200}>19,200</option>
-                    <option value={38400}>38,400</option>
-                    <option value={57600}>57,600</option>
-                    <option value={74880}>74,880</option>
-                    <option value={115200}>115,200 (ESP32 default)</option>
-                    <option value={230400}>230,400</option>
-                    <option value={460800}>460,800</option>
-                    <option value={921600}>921,600 (High-speed)</option>
-                    <option value={1000000}>1,000,000 (1 Mbaud)</option>
-                    <option value={1500000}>1,500,000</option>
-                    <option value={2000000}>2,000,000 (2 Mbaud)</option>
-                  </select>
+                  <label className="block text-slate-300 font-semibold mb-1">Flexible Baud Rate (1,00,000+)</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={baudRate}
+                      onChange={(e) => setBaudRate(Number(e.target.value))}
+                      disabled={serialStatus?.is_connected}
+                      className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 text-sm font-mono focus:outline-none focus:border-cyan-400 disabled:opacity-50"
+                    >
+                      <option value={0}>Auto-Detect (1,00,000+)</option>
+                      <option value={100000}>1,00,000 (100k)</option>
+                      <option value={115200}>1,15,200 (ESP32 1.15L)</option>
+                      <option value={128000}>1,28,000</option>
+                      <option value={230400}>2,30,400</option>
+                      <option value={250000}>2,50,000</option>
+                      <option value={460800}>4,60,800</option>
+                      <option value={500000}>5,00,000</option>
+                      <option value={921600}>9,21,600</option>
+                      <option value={1000000}>10,00,000 (1M)</option>
+                      <option value={2000000}>20,00,000 (2M)</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={0}
+                      max={5000000}
+                      step={100}
+                      value={baudRate}
+                      onChange={(e) => setBaudRate(Math.max(0, Number(e.target.value)))}
+                      disabled={serialStatus?.is_connected}
+                      placeholder="Baud"
+                      className="w-28 bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-slate-100 text-sm font-mono focus:outline-none focus:border-cyan-400 disabled:opacity-50"
+                    />
+                  </div>
                 </div>
 
                 <div>
