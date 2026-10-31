@@ -25,17 +25,7 @@ import {
   ReplayStatus,
   AlertThresholds
 } from "./types";
-import { api, getWsBase } from "./api";
-import {
-  DEFAULT_PATIENTS,
-  DEFAULT_THRESHOLDS,
-  DEFAULT_SERIAL_STATUS,
-  DEFAULT_REPLAY_STATUS,
-  generateDefaultReadings,
-  generateDefaultPredictions,
-  generateDefaultAlerts,
-  createSyntheticTelemetry
-} from "./defaultData";
+import { api } from "./api";
 
 export const App: React.FC = () => {
   // Navigation & Modal State
@@ -45,20 +35,27 @@ export const App: React.FC = () => {
   });
 
   // Patient State
-  const [patients, setPatients] = useState<Patient[]>(DEFAULT_PATIENTS);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<number>(1);
 
   // Live Telemetry & Feed State
   const [wsConnected, setWsConnected] = useState<boolean>(false);
-  const [latestTelemetry, setLatestTelemetry] = useState<TelemetryUpdateMessage | null>(() => createSyntheticTelemetry(1, 0));
-  const [historyReadings, setHistoryReadings] = useState<Reading[]>(() => generateDefaultReadings(1, 60));
-  const [predictions, setPredictions] = useState<PredictionRecord[]>(() => generateDefaultPredictions(1));
-  const [alerts, setAlerts] = useState<Alert[]>(() => generateDefaultAlerts(1));
-  const [thresholds, setThresholds] = useState<AlertThresholds>(DEFAULT_THRESHOLDS);
+  const [latestTelemetry, setLatestTelemetry] = useState<TelemetryUpdateMessage | null>(null);
+  const [historyReadings, setHistoryReadings] = useState<Reading[]>([]);
+  const [predictions, setPredictions] = useState<PredictionRecord[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [thresholds, setThresholds] = useState<AlertThresholds>({
+    hr_min: 50,
+    hr_max: 120,
+    spo2_min: 90,
+    temp_min: 36.0,
+    temp_max: 38.5,
+    sepsis_risk_threshold: 0.40
+  });
 
   // Hardware Status State
-  const [serialStatus, setSerialStatus] = useState<SerialStatus | null>(DEFAULT_SERIAL_STATUS);
-  const [replayStatus, setReplayStatus] = useState<ReplayStatus | null>(DEFAULT_REPLAY_STATUS);
+  const [serialStatus, setSerialStatus] = useState<SerialStatus | null>(null);
+  const [replayStatus, setReplayStatus] = useState<ReplayStatus | null>(null);
 
   // Audio Alerts State: Start MUTED by default on site open to eliminate unwanted beep sounds on page load.
   // The user can explicitly toggle the volume button in the navbar when sound is desired.
@@ -213,13 +210,13 @@ export const App: React.FC = () => {
     let reconnectTimeout: any = null;
 
     const connectWebSocket = () => {
-      try {
-        const url = getWsBase(selectedPatientId);
-        ws = new WebSocket(url);
+      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const url = `${wsProtocol}//${window.location.host}/ws/live/${selectedPatientId}`;
+      ws = new WebSocket(url);
 
-        ws.onopen = () => {
-          setWsConnected(true);
-        };
+      ws.onopen = () => {
+        setWsConnected(true);
+      };
 
       ws.onmessage = (event) => {
         try {
@@ -299,11 +296,7 @@ export const App: React.FC = () => {
         setWsConnected(false);
         ws?.close();
       };
-    } catch (err) {
-      setWsConnected(false);
-      reconnectTimeout = setTimeout(connectWebSocket, 3000);
-    }
-  };
+    };
 
     connectWebSocket();
 
@@ -312,37 +305,6 @@ export const App: React.FC = () => {
       if (ws) ws.close();
     };
   }, [selectedPatientId]);
-
-  // Autonomous simulation tick: when WebSocket is disconnected (e.g. running standalone on GitHub Pages),
-  // simulate continuous physiological vitals & realistic ECG sweep so dashboard is 100% alive and responsive
-  useEffect(() => {
-    if (wsConnected) return;
-    let tick = 1;
-    const simInterval = setInterval(() => {
-      if (isFrozenRef.current) return;
-      const syn = createSyntheticTelemetry(selectedPatientId, tick++);
-      setLatestTelemetry(syn);
-      const newReading: Reading = {
-        id: Date.now(),
-        patient_id: syn.patient_id,
-        device_id: syn.device_id,
-        ts_ms: syn.ts_ms,
-        time_synced: true,
-        buffered: false,
-        is_replay: syn.is_replay,
-        hr_bpm: syn.vitals.hr_bpm,
-        spo2_pct: syn.vitals.spo2_pct,
-        temp_c: syn.vitals.temp_c,
-        ecg_hr: syn.vitals.ecg_hr,
-        resp_rate: syn.vitals.resp_rate,
-        flags_json: JSON.stringify(syn.flags),
-        rssi: -58
-      };
-      setHistoryReadings((prev) => [...prev.slice(-120), newReading]);
-    }, 1000);
-
-    return () => clearInterval(simInterval);
-  }, [wsConnected, selectedPatientId]);
 
   // Alert Handlers
   const handleAcknowledgeAlert = async (alertId: number, name = "Clinician") => {
